@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronLeft, RotateCcw, Bookmark, Share2, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/button/Button";
 import { TopBadges } from "@/components/top-badges/TopBadges";
+import { ingredientIcon } from "@/lib/ingredient-icons";
 import { useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
   buildSchedule,
@@ -340,9 +341,17 @@ export function StepThree() {
 }
 
 function IngredientRow({ label, value }: { label: string; value: string }) {
+  const icon = ingredientIcon(label);
   return (
     <li className="flex items-center justify-between text-sm">
-      <span className="text-text-muted">{label}</span>
+      <span className="flex items-center gap-1.5 text-text-muted">
+        {icon && (
+          <span aria-hidden className="text-base leading-none">
+            {icon}
+          </span>
+        )}
+        {label}
+      </span>
       <span className="font-bold text-text tabular-nums">{value}</span>
     </li>
   );

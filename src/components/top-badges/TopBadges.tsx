@@ -1,6 +1,7 @@
 "use client";
 
 import { formatPercent } from "@/lib/calculations";
+import { ingredientIcon } from "@/lib/ingredient-icons";
 import { RecipeResult, SettingsState } from "@/types";
 
 interface TopBadgesProps {
@@ -24,15 +25,23 @@ export function TopBadges({ recipe, settings }: TopBadgesProps) {
 
   return (
     <div className="flex flex-wrap gap-2" role="group" aria-label="Baker's percentages, of total flour weight">
-      {badges.map((b) => (
-        <div
-          key={b.label}
-          className="flex items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white"
-        >
-          <span className="text-zinc-400">{b.label}</span>
-          <span className="relative top-px font-display font-bold text-accent-400 tabular-nums">{b.value}</span>
-        </div>
-      ))}
+      {badges.map((b) => {
+        const icon = ingredientIcon(b.label);
+        return (
+          <div
+            key={b.label}
+            className="flex items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white"
+          >
+            {icon && (
+              <span aria-hidden className="text-sm leading-none">
+                {icon}
+              </span>
+            )}
+            <span className="text-zinc-400">{b.label}</span>
+            <span className="relative top-px font-display font-bold text-accent-400 tabular-nums">{b.value}</span>
+          </div>
+        );
+      })}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import * as Slider from "@radix-ui/react-slider";
+import { ingredientIcon } from "@/lib/ingredient-icons";
 import { cn } from "@/lib/utils";
 
 interface SliderControlProps {
@@ -23,12 +24,20 @@ export function SliderControl({
   label,
 }: SliderControlProps) {
   const displayValue = formatValue ? formatValue(value) : String(value);
+  const icon = label ? ingredientIcon(label) : undefined;
 
   return (
     <div className="w-full">
       {label && (
         <div className="mb-3 flex items-center justify-between">
-          <span className="text-sm font-medium text-text-muted">{label}</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium text-text-muted">
+            {icon && (
+              <span aria-hidden className="text-base leading-none">
+                {icon}
+              </span>
+            )}
+            {label}
+          </span>
           <span className="font-display text-lg font-bold text-text tabular-nums">
             {displayValue}
           </span>

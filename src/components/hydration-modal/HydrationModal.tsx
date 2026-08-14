@@ -5,6 +5,7 @@ import { Button } from "@/components/button/Button";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { PresetPills } from "@/components/preset-pills/PresetPills";
 import { SliderControl } from "@/components/slider-control/SliderControl";
+import { ingredientIcon } from "@/lib/ingredient-icons";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
   HIGH_HYDRATION_PERCENT,
@@ -169,9 +170,17 @@ export function HydrationModal({ open, onOpenChange }: HydrationModalProps) {
 }
 
 function AutoRow({ label, value }: { label: string; value: string }) {
+  const icon = ingredientIcon(label);
   return (
     <div className="flex items-center justify-between text-sm">
-      <dt className="text-text-muted">{label}</dt>
+      <dt className="flex items-center gap-1.5 text-text-muted">
+        {icon && (
+          <span aria-hidden className="text-base leading-none">
+            {icon}
+          </span>
+        )}
+        {label}
+      </dt>
       <dd className="font-bold text-text tabular-nums">{value}</dd>
     </div>
   );
