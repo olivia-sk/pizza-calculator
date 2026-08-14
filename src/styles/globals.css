@@ -1,0 +1,295 @@
+@import "tailwindcss";
+
+/*
+ * Semantic color tokens in OKLCH.
+ *
+ * Theme resolution has three states: no attribute follows the OS
+ * (prefers-color-scheme), data-theme="light" and data-theme="dark" pin it.
+ * Light is the base palette; the dark values are declared twice, once for the
+ * OS preference (guarded so an explicit light choice wins) and once for the
+ * explicit dark choice.
+ */
+:root {
+  --page-bg: oklch(0.985 0.002 75); /* stone-50 */
+  --surface-bg: oklch(1 0 0); /* white cards */
+  --surface-sunken-bg: oklch(0.97 0.003 75); /* subtle recessed fill */
+  --border-c: oklch(0.89 0.006 75); /* neutral-200 */
+  --border-strong-c: oklch(0.79 0.008 75); /* neutral-300 */
+  --text-c: oklch(0.21 0.006 75); /* near-black, not pure #000 */
+  --text-muted-c: oklch(0.5 0.01 75); /* neutral-500 */
+  --text-on-dark-c: oklch(0.98 0 0);
+  --scrim: oklch(0.21 0.006 75 / 0.34);
+
+  /* Inverted surface: solid primary buttons, selected segments */
+  --inverse-bg: oklch(0.21 0.006 75);
+  --inverse-bg-hover: oklch(0.29 0.006 75);
+  --inverse-text: oklch(0.98 0 0);
+
+  /* Accent (orange) family, one hue, tuned per role */
+  --accent-50-c: oklch(0.98 0.016 73.684);
+  --accent-200-c: oklch(0.918 0.076 70.697);
+  --accent-400-c: oklch(0.75 0.183 55.934); /* readable on dark surfaces */
+  --accent-500-c: oklch(0.705 0.213 47.604); /* borders / rings, 3:1+ vs page */
+  --accent-700-c: oklch(0.553 0.195 38.402); /* solid fill, AA vs white text */
+  --accent-800-c: oklch(0.47 0.157 37.304); /* solid fill hover/active */
+
+  --focus-ring-c: oklch(0.553 0.195 38.402);
+
+  /*
+   * Motion tokens. The built-in CSS easings are too weak to read as
+   * intentional; these are the strong variants, shared so no component
+   * hand-types a curve.
+   */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --duration-press: 140ms;
+  --duration-enter: 220ms;
+  --duration-exit: 150ms;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page-bg: oklch(0.17 0.004 75);
+    --surface-bg: oklch(0.22 0.005 75);
+    --surface-sunken-bg: oklch(0.19 0.004 75);
+    --border-c: oklch(0.32 0.006 75);
+    --border-strong-c: oklch(0.4 0.008 75);
+    --text-c: oklch(0.96 0.002 75);
+    --text-muted-c: oklch(0.68 0.008 75);
+    --text-on-dark-c: oklch(0.98 0 0);
+    --scrim: oklch(0.08 0.004 75 / 0.6);
+
+    --inverse-bg: oklch(0.96 0.002 75);
+    --inverse-bg-hover: oklch(0.86 0.004 75);
+    --inverse-text: oklch(0.17 0.004 75);
+
+    --accent-50-c: oklch(0.28 0.045 45);
+    --accent-200-c: oklch(0.36 0.08 42);
+    --accent-400-c: oklch(0.78 0.18 55.934);
+    --accent-500-c: oklch(0.72 0.2 47.604);
+    --accent-700-c: oklch(0.65 0.2 40);
+    --accent-800-c: oklch(0.58 0.19 38);
+
+    --focus-ring-c: oklch(0.78 0.18 55.934);
+  }
+}
+
+:root[data-theme="dark"] {
+  --page-bg: oklch(0.17 0.004 75);
+  --surface-bg: oklch(0.22 0.005 75);
+  --surface-sunken-bg: oklch(0.19 0.004 75);
+  --border-c: oklch(0.32 0.006 75);
+  --border-strong-c: oklch(0.4 0.008 75);
+  --text-c: oklch(0.96 0.002 75);
+  --text-muted-c: oklch(0.68 0.008 75);
+  --text-on-dark-c: oklch(0.98 0 0);
+  --scrim: oklch(0.08 0.004 75 / 0.6);
+
+  --inverse-bg: oklch(0.96 0.002 75);
+  --inverse-bg-hover: oklch(0.86 0.004 75);
+  --inverse-text: oklch(0.17 0.004 75);
+
+  --accent-50-c: oklch(0.28 0.045 45);
+  --accent-200-c: oklch(0.36 0.08 42);
+  --accent-400-c: oklch(0.78 0.18 55.934);
+  --accent-500-c: oklch(0.72 0.2 47.604);
+  --accent-700-c: oklch(0.65 0.2 40);
+  --accent-800-c: oklch(0.58 0.19 38);
+
+  --focus-ring-c: oklch(0.78 0.18 55.934);
+}
+
+@theme inline {
+  --color-page: var(--page-bg);
+  --color-surface: var(--surface-bg);
+  --color-surface-sunken: var(--surface-sunken-bg);
+  --color-border: var(--border-c);
+  --color-border-strong: var(--border-strong-c);
+  --color-text: var(--text-c);
+  --color-text-muted: var(--text-muted-c);
+  --color-text-on-dark: var(--text-on-dark-c);
+  --color-inverse: var(--inverse-bg);
+  --color-inverse-hover: var(--inverse-bg-hover);
+  --color-inverse-text: var(--inverse-text);
+
+  --color-accent-50: var(--accent-50-c);
+  --color-accent-200: var(--accent-200-c);
+  --color-accent-400: var(--accent-400-c);
+  --color-accent-500: var(--accent-500-c);
+  --color-accent-700: var(--accent-700-c);
+  --color-accent-800: var(--accent-800-c);
+
+  --color-focus-ring: var(--focus-ring-c);
+
+  --font-body: var(--font-body);
+  --font-display: var(--font-display);
+
+  --ease-out: var(--ease-out);
+  --ease-in-out: var(--ease-in-out);
+}
+
+body {
+  background: var(--page-bg);
+  color: var(--text-c);
+  font-family: var(--font-body), Arial, Helvetica, sans-serif;
+}
+
+h1,
+h2,
+h3,
+.font-display {
+  font-family: var(--font-display), Arial, Helvetica, sans-serif;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Modal motion                                                               */
+/*                                                                            */
+/* A modal is not anchored to a trigger, so it scales from its own centre at   */
+/* every breakpoint. Keyframes rather than transitions here because Radix's    */
+/* Presence reads `animationName` to know how long to keep the node mounted;   */
+/* a transition would be skipped on close. Modals are not rapidly retriggered, */
+/* so the interruptibility cost is nil.                                        */
+/* -------------------------------------------------------------------------- */
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes overlay-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes modal-pop-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes modal-pop-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.97);
+  }
+}
+
+.modal-overlay {
+  animation: overlay-in var(--duration-enter) var(--ease-out);
+}
+
+.modal-overlay[data-state="closed"] {
+  animation: overlay-out var(--duration-exit) var(--ease-out);
+}
+
+.modal-sheet {
+  /* The resting transform lives here so the element does not jump when the
+     animation's fill ends. */
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+  animation: modal-pop-in var(--duration-enter) var(--ease-out);
+}
+
+.modal-sheet[data-state="closed"] {
+  /* Exit is faster than enter: the user has already decided. */
+  animation: modal-pop-out var(--duration-exit) var(--ease-out);
+}
+
+@keyframes step-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.step-transition {
+  animation: step-in 320ms var(--ease-out);
+}
+
+/*
+ * Reduced motion keeps the fades, which aid comprehension, and drops the
+ * movement and scaling, which is what causes discomfort.
+ */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes modal-pop-in {
+    from {
+      opacity: 0;
+      transform: translate(-50%, -50%);
+    }
+    to {
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
+  }
+
+  @keyframes modal-pop-out {
+    from {
+      opacity: 1;
+      transform: translate(-50%, -50%);
+    }
+    to {
+      opacity: 0;
+      transform: translate(-50%, -50%);
+    }
+  }
+
+  @keyframes step-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-property: opacity, background-color, border-color, color, fill,
+      stroke !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/*
+ * Adds bottom padding on top of whatever the element already has, rather
+ * than replacing it. This class is unlayered CSS, which always wins over
+ * Tailwind's `@layer utilities` regardless of source order — so a plain
+ * `padding-bottom: env(safe-area-inset-bottom)` here would silently zero
+ * out any `py-*`/`pb-*` bottom padding on non-notched devices, where the
+ * env() value is 0px. Every call site pairs this with `pt-*` (never
+ * `py-*`/`pb-*`) so this is the sole owner of padding-bottom and the two
+ * rules can't fight over the same property.
+ */
+.safe-bottom {
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
