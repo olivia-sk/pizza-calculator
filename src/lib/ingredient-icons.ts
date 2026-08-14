@@ -23,5 +23,13 @@ const ICONS: ReadonlyArray<readonly [keyword: string, emoji: string]> = [
 
 export function ingredientIcon(label: string): string | undefined {
   const key = label.toLowerCase();
-  return ICONS.find(([keyword]) => key.includes(keyword))?.[1];
+  // A parenthetical qualifies the ingredient rather than naming it, and it may
+  // name a different one: "Starter (% of total flour)" is starter, not flour.
+  // Outside the parentheses first, then the whole label, so a name that lives
+  // only in the qualifier ("Hydration (water)") still resolves.
+  const outside = key.replace(/\([^)]*\)/g, " ");
+  return (
+    ICONS.find(([keyword]) => outside.includes(keyword))?.[1] ??
+    ICONS.find(([keyword]) => key.includes(keyword))?.[1]
+  );
 }
