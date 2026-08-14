@@ -293,3 +293,12 @@ h3,
 .safe-bottom {
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 }
+
+/*
+ * Breathing room above the step heading, matching the space the fixed action
+ * bar leaves at the foot of the page, and clearing the status bar / notch on a
+ * phone the way .safe-bottom clears the home indicator.
+ */
+.safe-top {
+  padding-top: calc(2.5rem + env(safe-area-inset-top));
+}

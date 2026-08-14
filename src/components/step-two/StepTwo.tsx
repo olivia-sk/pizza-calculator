@@ -3,7 +3,6 @@
 import { ChevronLeft } from "lucide-react";
 import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
-import { Button } from "@/components/button/Button";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
 import { LONG_COLD_HOURS, MIN_POOLISH_AMBIENT_HOURS } from "@/constants/dough";
@@ -22,7 +21,6 @@ export function StepTwo() {
   const inputs = useRecipeInputs();
   const settings = useWizardStore((s) => s.settings);
   const updateInputs = useWizardStore((s) => s.updateInputs);
-  const next = useWizardStore((s) => s.next);
   const back = useWizardStore((s) => s.back);
 
   const recipe = calculateRecipe(inputs);
@@ -42,7 +40,7 @@ export function StepTwo() {
   const effHours = effectiveFermentationHours(inputs);
 
   return (
-    <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-28 pt-6">
+    <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-28 safe-top">
       <div className="flex items-center gap-3">
         <button
           aria-label="Back to core inputs"
@@ -165,16 +163,6 @@ export function StepTwo() {
         ))}
       </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pt-4 backdrop-blur safe-bottom">
-        <div className="mx-auto flex max-w-xl gap-3 pb-4">
-          <Button variant="outline" onClick={back}>
-            Back
-          </Button>
-          <Button variant="primary" className="flex-1" onClick={next}>
-            Continue
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }

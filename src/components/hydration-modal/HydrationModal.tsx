@@ -134,7 +134,7 @@ export function HydrationModal({ open, onOpenChange }: HydrationModalProps) {
               step={0.5}
               onChange={(v) => updateInputs({ sugarPercent: v })}
               formatValue={(v) => `${v.toFixed(1)}%`}
-              label="Sugar / Malt"
+              label="Sugar / Honey / Malt"
             />
             <p className="mt-3 text-xs text-text-muted">
               0% for high heat; 1.0%&ndash;2.0% to aid browning and feed yeast in
@@ -157,7 +157,7 @@ export function HydrationModal({ open, onOpenChange }: HydrationModalProps) {
           <dl className="mt-3 space-y-2">
             <AutoRow label="Salt" value={`${resolved.saltPercent.toFixed(1)}%`} />
             <AutoRow label="Oil" value={`${resolved.oilPercent.toFixed(1)}%`} />
-            <AutoRow label="Sugar / Malt" value={`${resolved.sugarPercent.toFixed(1)}%`} />
+            <AutoRow label="Sugar / Honey / Malt" value={`${resolved.sugarPercent.toFixed(1)}%`} />
           </dl>
           <p className="mt-4 text-xs text-text-muted">
             These come from your chosen style. Turn on Advanced mode in settings

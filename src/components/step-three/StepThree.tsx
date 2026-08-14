@@ -1,8 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
-import { ChevronLeft, RotateCcw, Bookmark, Share2, CheckCircle2 } from "lucide-react";
-import { Button } from "@/components/button/Button";
+import { useMemo } from "react";
+import { ChevronLeft, CheckCircle2 } from "lucide-react";
 import { TopBadges } from "@/components/top-badges/TopBadges";
 import { ingredientIcon } from "@/lib/ingredient-icons";
 import { useRecipeInputs, useWizardStore } from "@/lib/store";
@@ -25,10 +24,6 @@ export function StepThree() {
   const inputs = useRecipeInputs();
   const settings = useWizardStore((s) => s.settings);
   const back = useWizardStore((s) => s.back);
-  const reset = useWizardStore((s) => s.reset);
-
-  const [saved, setSaved] = useState(false);
-  const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">("idle");
 
   const recipe = calculateRecipe(inputs);
   const massUnit = settings.massUnit;
@@ -153,34 +148,8 @@ export function StepThree() {
 
   const roomTimeTotal = roundTo(inputs.fermentationHours, 2);
 
-  async function handleShare() {
-    const params = new URLSearchParams({
-      style: inputs.style,
-      count: String(inputs.pizzaCount),
-      weight: String(roundTo(inputs.doughballWeight, 1)),
-      size: String(roundTo(inputs.pizzaSizeIn, 1)),
-      hydration: String(inputs.hydration),
-      salt: String(inputs.saltPercent),
-      leavening: inputs.leavening,
-      hours: String(inputs.fermentationHours),
-      temp: String(roundTo(inputs.roomTempC, 2)),
-    });
-    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/?${params.toString()}`;
-    try {
-      if (typeof navigator === "undefined" || !navigator.clipboard) {
-        throw new Error("Clipboard unavailable");
-      }
-      await navigator.clipboard.writeText(url);
-      setShareStatus("copied");
-    } catch {
-      setShareStatus("error");
-    } finally {
-      setTimeout(() => setShareStatus("idle"), 2500);
-    }
-  }
-
   return (
-    <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-32 pt-6">
+    <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-32 safe-top">
       <div className="flex items-center gap-3">
         <button
           aria-label="Back to fermentation settings"
@@ -256,7 +225,7 @@ export function StepThree() {
             <IngredientRow label="Oil" value={formatMass(recipe.oil, massUnit)} />
           )}
           {recipe.sugar > 0 && (
-            <IngredientRow label="Sugar / Malt" value={formatMass(recipe.sugar, massUnit)} />
+            <IngredientRow label="Sugar / Honey / Malt" value={formatMass(recipe.sugar, massUnit)} />
           )}
           <li className="flex items-center justify-between border-t border-border pt-3 text-sm text-text-muted">
             <span>Total flour (100%)</span>
@@ -312,30 +281,6 @@ export function StepThree() {
         </ol>
       </section>
 
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pt-4 backdrop-blur safe-bottom">
-        <div className="mx-auto flex max-w-xl gap-2 pb-4">
-          <Button variant="outline" onClick={reset} aria-label="Reset all inputs">
-            <RotateCcw size={16} strokeWidth={1.75} />
-          </Button>
-          <Button
-            variant={saved ? "secondary" : "outline"}
-            className="flex-1"
-            onClick={() => setSaved((v) => !v)}
-            aria-pressed={saved}
-          >
-            <Bookmark size={16} strokeWidth={1.75} fill={saved ? "currentColor" : "none"} />
-            {saved ? "Saved" : "Save recipe"}
-          </Button>
-          <Button variant="primary" className="flex-1" onClick={handleShare}>
-            <Share2 size={16} strokeWidth={1.75} />
-            {shareStatus === "copied" ? "Link copied" : shareStatus === "error" ? "Copy failed" : "Share recipe"}
-          </Button>
-        </div>
-      </div>
-      <div role="status" aria-live="polite" className="sr-only">
-        {shareStatus === "copied" && "Recipe link copied to clipboard"}
-        {shareStatus === "error" && "Could not copy the recipe link"}
-      </div>
     </div>
   );
 }

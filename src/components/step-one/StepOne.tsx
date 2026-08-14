@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Settings, ChevronRight } from "lucide-react";
 import { Select } from "@/components/select/Select";
 import { Stepper } from "@/components/stepper/Stepper";
-import { Button } from "@/components/button/Button";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import { doughballWeightFromSize, formatMass, roundTo } from "@/lib/calculations";
 import { STYLES, YEAST_LABELS } from "@/constants/dough";
@@ -49,7 +48,6 @@ export function StepOne() {
   const resolved = useRecipeInputs();
   const settings = useWizardStore((s) => s.settings);
   const updateInputs = useWizardStore((s) => s.updateInputs);
-  const next = useWizardStore((s) => s.next);
 
   const [doughModal, setDoughModal] = useState(false);
   const [hydrationModal, setHydrationModal] = useState(false);
@@ -70,7 +68,7 @@ export function StepOne() {
   }
 
   return (
-    <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-28 pt-6">
+    <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-28 safe-top">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-text">
@@ -152,14 +150,6 @@ export function StepOne() {
         value={YEAST_LABELS[inputs.leavening]}
         onClick={() => setLeaveningModal(true)}
       />
-
-      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-border bg-surface/95 px-4 pt-4 backdrop-blur safe-bottom">
-        <div className="mx-auto max-w-xl pb-4">
-          <Button variant="primary" className="w-full" onClick={next}>
-            Continue
-          </Button>
-        </div>
-      </div>
 
       <DoughballModal open={doughModal} onOpenChange={setDoughModal} />
       <HydrationModal open={hydrationModal} onOpenChange={setHydrationModal} />

@@ -12,6 +12,9 @@ import {
 import { StepOne } from "@/components/step-one/StepOne";
 import { StepTwo } from "@/components/step-two/StepTwo";
 import { StepThree } from "@/components/step-three/StepThree";
+import { StepThreeActions } from "@/components/step-three/StepThreeActions";
+import { ActionBar } from "@/components/action-bar/ActionBar";
+import { Button } from "@/components/button/Button";
 
 const LEAVENINGS: LeaveningType[] = ["idy", "ady", "fresh", "sourdough", "poolish"];
 
@@ -53,6 +56,8 @@ export function WizardContainer() {
   const step = useWizardStore((s) => s.step);
   const keepAwake = useWizardStore((s) => s.settings.keepAwake);
   const theme = useWizardStore((s) => s.settings.theme);
+  const next = useWizardStore((s) => s.next);
+  const back = useWizardStore((s) => s.back);
 
   // The pre-hydration script in the root layout sets the initial attribute;
   // this keeps it in sync afterwards and persists the choice for next load.
@@ -109,6 +114,26 @@ export function WizardContainer() {
       {step === 1 && <StepOne key="step-1" />}
       {step === 2 && <StepTwo key="step-2" />}
       {step === 3 && <StepThree key="step-3" />}
+
+      {/* Mounted once, outside the animating steps, so it never blinks. */}
+      <ActionBar className={step === 3 ? "gap-2" : undefined}>
+        {step === 1 && (
+          <Button variant="primary" className="w-full" onClick={next}>
+            Continue
+          </Button>
+        )}
+        {step === 2 && (
+          <>
+            <Button variant="outline" onClick={back}>
+              Back
+            </Button>
+            <Button variant="primary" className="flex-1" onClick={next}>
+              Continue
+            </Button>
+          </>
+        )}
+        {step === 3 && <StepThreeActions />}
+      </ActionBar>
     </main>
   );
 }
