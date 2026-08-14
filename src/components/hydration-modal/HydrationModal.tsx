@@ -2,8 +2,18 @@
 
 import { Modal } from "@/components/modal/Modal";
 import { Button } from "@/components/button/Button";
+import { InfoBadge } from "@/components/info-badge/InfoBadge";
+import { PresetPills } from "@/components/preset-pills/PresetPills";
 import { SliderControl } from "@/components/slider-control/SliderControl";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
+import {
+  HIGH_HYDRATION_PERCENT,
+  HYDRATION_PRESETS,
+  OIL_PRESETS,
+  SALT_PRESETS,
+  STYLES,
+  SUGAR_PRESETS,
+} from "@/constants/dough";
 
 interface HydrationModalProps {
   open: boolean;
@@ -11,10 +21,16 @@ interface HydrationModalProps {
 }
 
 export function HydrationModal({ open, onOpenChange }: HydrationModalProps) {
+  // Sliders bind to the raw inputs, never to the resolved formula: in simple
+  // mode the resolved values are the style's, so writing them back would
+  // silently overwrite an advanced override the moment the user nudged a slider.
   const inputs = useWizardStore((s) => s.inputs);
   const advanced = useWizardStore((s) => s.settings.advanced);
   const updateInputs = useWizardStore((s) => s.updateInputs);
   const resolved = useRecipeInputs();
+
+  const style = STYLES[inputs.style];
+  const highHydration = inputs.hydration > HIGH_HYDRATION_PERCENT;
 
   return (
     <Modal
@@ -42,36 +58,95 @@ export function HydrationModal({ open, onOpenChange }: HydrationModalProps) {
         formatValue={(v) => `${v.toFixed(1)}%`}
         label="Hydration (water)"
       />
+      <PresetPills
+        value={inputs.hydration}
+        presets={HYDRATION_PRESETS}
+        onChange={(v) => updateInputs({ hydration: v })}
+        styleDefault={style.defaultHydration}
+        ariaLabel="Hydration presets"
+      />
+      {highHydration && (
+        <InfoBadge tone="warn">
+          Requires high-protein flour and careful handling.
+        </InfoBadge>
+      )}
+      {highHydration && inputs.style === "neapolitan" && (
+        <InfoBadge tone="warn">
+          High hydration in a high-heat oven can bake to a gummy crumb unless the
+          pizza goes in and out quickly.
+        </InfoBadge>
+      )}
 
       {advanced ? (
-        <div className="mt-8 space-y-6 border-t border-border pt-6">
-          <SliderControl
-            value={inputs.saltPercent}
-            min={LIMITS.saltPercent.min}
-            max={LIMITS.saltPercent.max}
-            step={0.1}
-            onChange={(v) => updateInputs({ saltPercent: v })}
-            formatValue={(v) => `${v.toFixed(1)}%`}
-            label="Salt"
-          />
-          <SliderControl
-            value={inputs.oilPercent}
-            min={LIMITS.oilPercent.min}
-            max={LIMITS.oilPercent.max}
-            step={0.5}
-            onChange={(v) => updateInputs({ oilPercent: v })}
-            formatValue={(v) => `${v.toFixed(1)}%`}
-            label="Oil"
-          />
-          <SliderControl
-            value={inputs.sugarPercent}
-            min={LIMITS.sugarPercent.min}
-            max={LIMITS.sugarPercent.max}
-            step={0.5}
-            onChange={(v) => updateInputs({ sugarPercent: v })}
-            formatValue={(v) => `${v.toFixed(1)}%`}
-            label="Sugar / Malt"
-          />
+        <div className="mt-8 space-y-8 border-t border-border pt-6">
+          <div>
+            <SliderControl
+              value={inputs.saltPercent}
+              min={LIMITS.saltPercent.min}
+              max={LIMITS.saltPercent.max}
+              step={0.1}
+              onChange={(v) => updateInputs({ saltPercent: v })}
+              formatValue={(v) => `${v.toFixed(1)}%`}
+              label="Salt"
+            />
+            <p className="mt-3 text-xs text-text-muted">
+              2.8%&ndash;3.0% for Neapolitan; 2.0%&ndash;2.5% for NY and home ovens.
+              More salt slows the yeast, so the dose is adjusted for you.
+            </p>
+            <PresetPills
+              value={inputs.saltPercent}
+              presets={SALT_PRESETS}
+              onChange={(v) => updateInputs({ saltPercent: v })}
+              styleDefault={style.defaultSalt}
+              ariaLabel="Salt presets"
+            />
+          </div>
+
+          <div>
+            <SliderControl
+              value={inputs.oilPercent}
+              min={LIMITS.oilPercent.min}
+              max={LIMITS.oilPercent.max}
+              step={0.5}
+              onChange={(v) => updateInputs({ oilPercent: v })}
+              formatValue={(v) => `${v.toFixed(1)}%`}
+              label="Oil"
+            />
+            <p className="mt-3 text-xs text-text-muted">
+              0% for high-heat pizza ovens (&gt;400&deg;C/750&deg;F);
+              1.5%&ndash;3.0% for home ovens to retain moisture.
+            </p>
+            <PresetPills
+              value={inputs.oilPercent}
+              presets={OIL_PRESETS}
+              onChange={(v) => updateInputs({ oilPercent: v })}
+              styleDefault={style.defaultOil}
+              ariaLabel="Oil presets"
+            />
+          </div>
+
+          <div>
+            <SliderControl
+              value={inputs.sugarPercent}
+              min={LIMITS.sugarPercent.min}
+              max={LIMITS.sugarPercent.max}
+              step={0.5}
+              onChange={(v) => updateInputs({ sugarPercent: v })}
+              formatValue={(v) => `${v.toFixed(1)}%`}
+              label="Sugar / Malt"
+            />
+            <p className="mt-3 text-xs text-text-muted">
+              0% for high heat; 1.0%&ndash;2.0% to aid browning and feed yeast in
+              home ovens.
+            </p>
+            <PresetPills
+              value={inputs.sugarPercent}
+              presets={SUGAR_PRESETS}
+              onChange={(v) => updateInputs({ sugarPercent: v })}
+              styleDefault={style.defaultSugar}
+              ariaLabel="Sugar presets"
+            />
+          </div>
         </div>
       ) : (
         <div className="mt-8 border-t border-border pt-6">

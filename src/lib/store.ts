@@ -13,10 +13,10 @@ export const LIMITS = {
   pizzaCount: { min: 1, max: 99 },
   doughballWeight: { min: 50, max: 1500 },
   pizzaSizeIn: { min: 6, max: 24 },
-  hydration: { min: 50, max: 90 },
-  saltPercent: { min: 0, max: 5 },
-  oilPercent: { min: 0, max: 10 },
-  sugarPercent: { min: 0, max: 10 },
+  hydration: { min: 50, max: 85 },
+  saltPercent: { min: 1.5, max: 3.5 },
+  oilPercent: { min: 0, max: 5 },
+  sugarPercent: { min: 0, max: 4 },
   sourdoughPercent: { min: 3, max: 40 },
   fermentationHours: { min: 1, max: 25 },
   roomTempC: { min: 15, max: 35 },
@@ -129,7 +129,7 @@ export const useWizardStore = create<WizardStore>()(
     }),
     {
       name: "pizza-calculator-storage",
-      version: 3,
+      version: 4,
       // Server render and first client paint must agree, so rehydration is
       // deferred to an effect (see WizardContainer) instead of running during
       // module evaluation, which would desync SSR markup from client state.
@@ -138,7 +138,9 @@ export const useWizardStore = create<WizardStore>()(
       // v1 stored doughball weights derived from the old thickness factors and
       // had no oil/sugar fields; v2 predates the simple/advanced split and the
       // 4-pizza default. Neither is comparable, so inputs reset and only the
-      // display settings carry over.
+      // display settings carry over. v3 differs only in the formula ranges, so
+      // it passes through: `merge` runs every payload back through `sanitize`,
+      // which clamps into the narrowed LIMITS on its own.
       migrate: (persisted, version) => {
         if (version < 3) {
           const prev = persisted as { settings?: SettingsState } | undefined;

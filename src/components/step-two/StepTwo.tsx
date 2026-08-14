@@ -4,7 +4,9 @@ import { ChevronLeft } from "lucide-react";
 import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
 import { Button } from "@/components/button/Button";
+import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
+import { LONG_COLD_HOURS, MIN_POOLISH_AMBIENT_HOURS } from "@/constants/dough";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
   calculateRecipe,
@@ -69,6 +71,19 @@ export function StepTwo() {
           onChange={(v) => updateInputs({ fermentationHours: v })}
           formatValue={formatHours}
         />
+        {inputs.coldFerment && (
+          <p className="mt-3 text-xs text-text-muted">
+            Total ambient time: the pre-fridge bulk rest plus the post-fridge
+            temper and ball proof. The fridge stage below is on top of this.
+          </p>
+        )}
+        {inputs.leavening === "poolish" &&
+          inputs.fermentationHours < MIN_POOLISH_AMBIENT_HOURS && (
+            <InfoBadge tone="warn">
+              Poolish preferments require at least 6&ndash;8 hours at room
+              temperature to mature and develop flavor.
+            </InfoBadge>
+          )}
       </section>
 
       <section className="rounded-2xl border border-border bg-surface px-4 py-5">
@@ -117,6 +132,12 @@ export function StepTwo() {
               onChange={(v) => updateInputs({ coldTempC: fromDisplay(v) })}
               formatValue={(v) => `${Math.round(v)}°${tempUnit}`}
             />
+            {inputs.coldHours > LONG_COLD_HOURS && (
+              <InfoBadge tone="warn" className="mt-0">
+                Use a strong flour (W &gt; 300, 12.5%+ protein) for ferments this
+                long, or the gluten will break down.
+              </InfoBadge>
+            )}
           </div>
         )}
       </section>

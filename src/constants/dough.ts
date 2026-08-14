@@ -57,6 +57,36 @@ export const STYLES: Record<PizzaStyle, StyleInfo> = {
   },
 };
 
+/** A one-tap value for a formula slider, with the reason you would pick it. */
+export interface Preset {
+  value: number;
+  label: string;
+}
+
+export const HYDRATION_PRESETS: Preset[] = [
+  { value: 60, label: "Beginner / crisp" },
+  { value: 65, label: "Balanced" },
+  { value: 70, label: "High hydration" },
+];
+
+export const SALT_PRESETS: Preset[] = [
+  { value: 2.0, label: "NY / pan" },
+  { value: 2.5, label: "Balanced" },
+  { value: 2.9, label: "Neapolitan" },
+];
+
+export const OIL_PRESETS: Preset[] = [
+  { value: 0, label: "None (high heat)" },
+  { value: 2.0, label: "Classic home" },
+  { value: 3.5, label: "Pan / crispy" },
+];
+
+export const SUGAR_PRESETS: Preset[] = [
+  { value: 0, label: "None" },
+  { value: 1.0, label: "Light brown" },
+  { value: 2.0, label: "Standard NY" },
+];
+
 export const YEAST_LABELS: Record<LeaveningType, string> = {
   idy: "Instant Dry Yeast",
   ady: "Active Dry Yeast",
@@ -78,6 +108,45 @@ export const YEAST_CONVERSION: Record<
   ady: 1.25,
   fresh: 3.0,
 };
+
+/**
+ * Salt that the dosing curves were calibrated at, as a fraction of flour.
+ * Doughs saltier than this need a bigger dose to hit the same rise.
+ */
+export const SALT_BASELINE = 0.025;
+
+/**
+ * Osmotic inhibition. Salt draws water out of the yeast cell, which slows
+ * metabolism, so a saltier dough ferments more slowly at the same dose. The
+ * slope is per *fraction* of flour, i.e. ~+12% dose per extra percentage point
+ * of salt over the 2.5% baseline: 1.5% -> 0.88, 2.5% -> 1.00, 3.5% -> 1.12.
+ */
+export const SALT_RETARDATION_SLOPE = 12;
+
+/** Keeps the salt factor sane if a value ever lands outside the slider range. */
+export const SALT_FACTOR_BOUNDS = { min: 0.7, max: 1.5 } as const;
+
+/**
+ * Decay constant for folding a cold stage into room-temperature-equivalent
+ * hours. Wild yeast and the lactic acid bacteria in a sourdough culture shut
+ * down harder in the fridge than commercial S. cerevisiae does, so a fridge
+ * hour buys less fermentation; reusing k = 0.08 for a levain overestimates
+ * cold activity and under-doses the starter.
+ */
+export const COLD_DECAY_K = { commercial: 0.08, sourdough: 0.12 } as const;
+
+/** Hydration above this needs strong flour and a careful hand. */
+export const HIGH_HYDRATION_PERCENT = 70;
+
+/** Cold ferments past this risk gluten breakdown on a weak flour. */
+export const LONG_COLD_HOURS = 72;
+
+/** The pre-fridge bulk rest takes a quarter of the ambient time, capped at 2 h. */
+export const PRE_FRIDGE_BULK_CAP_H = 2;
+export const PRE_FRIDGE_BULK_FRACTION = 0.25;
+
+/** A doughball needs roughly this long out of the fridge to reach room temp. */
+export const MIN_TEMPER_H = 1.5;
 
 /**
  * Straight-dough IDY dosing curve, as a percentage of total flour:
@@ -123,6 +192,14 @@ export const STARTER_MODEL = {
   minPercent: 3,
   maxPercent: 40,
 } as const;
+
+/**
+ * A poolish is not ready until the yeast has built a stable, domed foam. Under
+ * 6 h it is still sweet batter, and under 8 h of total ambient time there is no
+ * room left for the final dough to rise after the preferment matures.
+ */
+export const MIN_POOLISH_HOURS = 6;
+export const MIN_POOLISH_AMBIENT_HOURS = 8;
 
 /** Share of total flour that goes into the poolish (Vito Iacopelli style). */
 export const POOLISH_FLOUR_FRACTION = 0.3;

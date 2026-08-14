@@ -1,8 +1,17 @@
 import {
+  COLD_DECAY_K,
   GRAMS_PER_OUNCE,
+  MIN_POOLISH_AMBIENT_HOURS,
+  MIN_POOLISH_HOURS,
+  MIN_TEMPER_H,
   POOLISH_FLOUR_FRACTION,
   POOLISH_HONEY_PERCENT,
   POOLISH_MODEL,
+  PRE_FRIDGE_BULK_CAP_H,
+  PRE_FRIDGE_BULK_FRACTION,
+  SALT_BASELINE,
+  SALT_FACTOR_BOUNDS,
+  SALT_RETARDATION_SLOPE,
   STARTER_HYDRATION,
   STARTER_MODEL,
   STYLES,
@@ -84,19 +93,48 @@ function dose(model: DoseModel, hours: number, tempC: number): number {
   return clamp(raw, model.minPercent, model.maxPercent);
 }
 
+/**
+ * Multiplier on the leavening dose for salt above or below the 2.5% the curves
+ * were fitted at. Salt is osmotically hostile to yeast, so a saltier dough
+ * needs more of it to finish in the same time: 1.5% -> 0.88, 3.5% -> 1.12.
+ */
+export function saltRetardationFactor(saltPercent: number): number {
+  const S = Math.max(saltPercent, 0) / 100;
+  const raw = 1 + SALT_RETARDATION_SLOPE * (S - SALT_BASELINE);
+  return clamp(raw, SALT_FACTOR_BOUNDS.min, SALT_FACTOR_BOUNDS.max);
+}
+
 /** Instant dry yeast, percent of total flour, for a straight dough. */
 export function calcIdyPercent(hours: number, roomTempC: number): number {
   return dose(YEAST_MODEL, hours, roomTempC);
 }
 
-/** Instant dry yeast, percent of the *poolish* flour, for the preferment. */
+/**
+ * Instant dry yeast, percent of the *poolish* flour, for the preferment.
+ * Deliberately not salt-corrected: a poolish is unsalted, so the salt in the
+ * final dough never reaches the yeast during the preferment's own rise.
+ */
 export function calcPoolishIdyPercent(hours: number, roomTempC: number): number {
   return dose(POOLISH_MODEL, hours, roomTempC);
 }
 
-/** A sensible sourdough starter dose, percent of total flour. */
-export function suggestedStarterPercent(hours: number, roomTempC: number): number {
-  return roundTo(dose(STARTER_MODEL, hours, roomTempC), 1);
+/**
+ * A sensible sourdough starter dose, percent of total flour. A levain is as
+ * osmotically sensitive as commercial yeast, so it takes the same salt
+ * correction, re-clamped afterwards because the multiplier can push the
+ * suggestion out of the model's band.
+ */
+export function suggestedStarterPercent(
+  hours: number,
+  roomTempC: number,
+  saltPercent: number = SALT_BASELINE * 100
+): number {
+  const base = dose(STARTER_MODEL, hours, roomTempC);
+  const adjusted = base * saltRetardationFactor(saltPercent);
+  return roundTo(
+    clamp(adjusted, STARTER_MODEL.minPercent, STARTER_MODEL.maxPercent),
+    1
+  );
 }
 
 /**
@@ -105,16 +143,22 @@ export function suggestedStarterPercent(hours: number, roomTempC: number): numbe
  *
  *   t_eff = t_room + t_cold * exp(k * (T_cold - T_room))
  *
- * At 4 C in a 21 C kitchen one fridge hour counts as e^(0.08*(4-21)) ~ 0.26
- * room hours. This replaces a hard-coded 0.2 weighting that ignored the actual
- * fridge temperature.
+ * k depends on the culture, because commercial yeast and a sourdough levain do
+ * not slow down at the same rate in the fridge. At 4 C in a 21 C kitchen one
+ * fridge hour counts as e^(0.08*(4-21)) ~ 0.26 room hours for commercial
+ * yeast, but only e^(0.12*(4-21)) ~ 0.13 for a starter. The whole fridge range
+ * (1-10 C) sits in the band where wild yeast and LAB fall off faster, so the
+ * constant applies across the cold stage rather than piecewise below 10 C,
+ * which would only put a kink in the middle of the slider.
  */
 export function effectiveFermentationHours(inputs: WizardInputs): number {
   const room = Math.max(inputs.fermentationHours, 0);
   if (!inputs.coldFerment) return room;
-  const factor = Math.exp(
-    YEAST_MODEL.k * (inputs.coldTempC - inputs.roomTempC)
-  );
+  const k =
+    inputs.leavening === "sourdough"
+      ? COLD_DECAY_K.sourdough
+      : COLD_DECAY_K.commercial;
+  const factor = Math.exp(k * (inputs.coldTempC - inputs.roomTempC));
   return room + Math.max(inputs.coldHours, 0) * factor;
 }
 
@@ -142,9 +186,12 @@ export function resolveFormula(
     sugarPercent: style.defaultSugar,
   };
   if (inputs.leavening === "sourdough") {
+    // Salt comes from the style here, so the starter dose is corrected against
+    // the salt the dough will actually carry, not the raw input.
     resolved.sourdoughPercent = suggestedStarterPercent(
       effectiveFermentationHours(inputs),
-      inputs.roomTempC
+      inputs.roomTempC,
+      resolved.saltPercent
     );
   }
   return resolved;
@@ -165,16 +212,36 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
 
   // The poolish takes roughly half the budget, held to a 6-16 h window, and
   // always leaves at least 2 h (or a third of the budget) for the final dough.
+  // The 6 h floor wins whenever the budget can afford it, which is from 8 h of
+  // ambient time up. Below that the two stages cannot both be satisfied, so the
+  // cap takes over and calculateRecipe raises MIN_POOLISH_AMBIENT_HOURS as a
+  // warning rather than silently scheduling an immature preferment.
   const poolishHours = isPoolish
-    ? clamp(clamp(total * 0.5, 6, 16), 0, Math.max(total - 2, total / 3))
+    ? clamp(
+        clamp(total * 0.5, MIN_POOLISH_HOURS, 16),
+        0,
+        Math.max(total - 2, total / 3)
+      )
     : 0;
 
   const remaining = Math.max(total - poolishHours, 0);
   const coldHours = inputs.coldFerment ? Math.max(inputs.coldHours, 0) : 0;
 
   if (inputs.coldFerment) {
-    // Tempering out of the fridge is a bounded task, not a proportional one.
-    const temperHours = clamp(remaining * 0.3, Math.min(1, remaining), 4);
+    // A cold ferment splits the ambient budget in two around the fridge: a
+    // short bulk rest to get fermentation started before the chill, and
+    // everything left over to temper and finish proofing the balls afterwards.
+    // The temper floor is capped at `remaining` so the stages still sum to the
+    // ambient time the user asked for, even when that time is very short.
+    const bulk = Math.min(
+      PRE_FRIDGE_BULK_CAP_H,
+      remaining * PRE_FRIDGE_BULK_FRACTION
+    );
+    const temperHours = clamp(
+      remaining - bulk,
+      Math.min(MIN_TEMPER_H, remaining),
+      remaining
+    );
     return {
       poolishHours,
       bulkHours: remaining - temperHours,
@@ -256,13 +323,17 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     honeyPercent = POOLISH_HONEY_PERCENT;
   } else {
     const conv = YEAST_CONVERSION[inputs.leavening as "idy" | "ady" | "fresh"];
-    yeastPercent = calcIdyPercent(effHours, inputs.roomTempC) * conv;
-    yeastDosePercent = yeastPercent;
-    if (yeastPercent >= YEAST_MODEL.maxPercent * conv - 1e-9) {
+    const base = calcIdyPercent(effHours, inputs.roomTempC);
+    // The cap is a property of the dosing curve, so it is tested before the
+    // salt correction. Testing after would let a merely salty dough look like
+    // an impossibly short ferment.
+    if (base >= YEAST_MODEL.maxPercent - 1e-9) {
       warnings.push(
         "Yeast is capped. That fermentation time is very short for this temperature."
       );
     }
+    yeastPercent = base * conv * saltRetardationFactor(inputs.saltPercent);
+    yeastDosePercent = yeastPercent;
   }
 
   const Y = isSourdough ? 0 : yeastPercent / 100;
@@ -295,6 +366,9 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       yeast: yeastWeight,
       hours: schedule.poolishHours,
     };
+    // Clamped at zero because a negative weigh-out is unusable, but that clamp
+    // destroys mass, so the formula has to be flagged rather than quietly
+    // rendering numbers that no longer add up to the dough weight.
     mainDough = {
       flour: totalFlour - poolishFlour,
       water: Math.max(totalWater - poolishWater, 0),
@@ -317,6 +391,45 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       flour: Math.max(totalFlour - starterFlour, 0),
       water: Math.max(totalWater - starterWater, 0),
     };
+    if (starterFlour > totalFlour) {
+      warnings.push(
+        "The starter carries more flour than the formula holds. Lower the starter percentage."
+      );
+    }
+  }
+
+  if (isPoolish && inputs.fermentationHours < MIN_POOLISH_AMBIENT_HOURS) {
+    warnings.push(
+      "Poolish preferments require at least 6-8 hours at room temperature to mature and develop flavor."
+    );
+  }
+
+  if (inputs.coldFerment && schedule.bulkHours <= 0) {
+    warnings.push(
+      "Not enough ambient time to both bulk and temper. Allow at least 3 hours at room temperature around the fridge stage."
+    );
+  }
+
+  // The parts you weigh out must add back up to the dough you asked for. This
+  // holds by construction, so a failure means the divisor or a split-off has
+  // drifted out of step with the formula rather than a bad input.
+  const partsTotal =
+    mainDough.flour +
+    mainDough.water +
+    (poolish ? poolish.flour + poolish.water : 0) +
+    (starter ? starter.weight : 0) +
+    salt +
+    oil +
+    sugar +
+    honey +
+    (isSourdough ? 0 : yeastWeight);
+  if (
+    totalDoughWeight > 0 &&
+    Math.abs(partsTotal - totalDoughWeight) > 1e-6 * totalDoughWeight
+  ) {
+    warnings.push(
+      "This formula does not balance. Check hydration against the water carried in by the starter or poolish."
+    );
   }
 
   const r1 = (n: number) => roundTo(n, 1);
@@ -348,11 +461,13 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       hours: poolish.hours,
     },
     mainDough: { flour: r1(mainDough.flour), water: r1(mainDough.water) },
+    // Built from the same clamped fractions the weights are, so the badges can
+    // never disagree with the ingredient list.
     bakersPercent: {
-      water: inputs.hydration,
-      salt: inputs.saltPercent,
-      oil: inputs.oilPercent ?? 0,
-      sugar: inputs.sugarPercent ?? 0,
+      water: roundTo(H * 100, 2),
+      salt: roundTo(S * 100, 2),
+      oil: roundTo(O * 100, 2),
+      sugar: roundTo(G * 100, 2),
       honey: honeyPercent,
       yeast: roundTo(yeastPercent, 3),
     },

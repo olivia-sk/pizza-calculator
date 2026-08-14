@@ -30,7 +30,7 @@ export function TopBadges({ recipe, settings }: TopBadgesProps) {
           className="flex items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white"
         >
           <span className="text-zinc-400">{b.label}</span>
-          <span className="font-display font-bold text-accent-400 tabular-nums">{b.value}</span>
+          <span className="relative top-px font-display font-bold text-accent-400 tabular-nums">{b.value}</span>
         </div>
       ))}
     </div>

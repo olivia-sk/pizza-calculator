@@ -46,19 +46,38 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
     setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
   }
 
-  function handleWeightChange(v: string) {
-    setWeight(v);
-    const n = parseFloat(v);
-    if (!Number.isFinite(n) || n <= 0) return;
-    const grams = fromDisplayMass(n, massUnit);
+  // While typing, the draft is left exactly as typed. Recomputing the paired
+  // field on every keystroke would churn it through nonsense on the way to a
+  // real number: clearing the weight and typing "6" of "600" would briefly
+  // resolve the diameter for a 6 g doughball. Both fields settle on blur.
+  function handleWeightBlur() {
+    const n = parseFloat(weight);
+    if (!Number.isFinite(n) || n <= 0) {
+      setWeight(displayWeight(inputs.doughballWeight));
+      setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
+      return;
+    }
+    // Convert to grams first: the limits are metric, so clamping an ounce value
+    // against them would reject anything over 1500 oz and cap at 50 oz.
+    const grams = clamp(
+      fromDisplayMass(n, massUnit),
+      LIMITS.doughballWeight.min,
+      LIMITS.doughballWeight.max
+    );
+    setWeight(displayWeight(grams));
     setSize(String(sizeFromDoughballWeight(grams, inputs.style)));
   }
 
-  function handleSizeChange(v: string) {
-    setSize(v);
-    const n = parseFloat(v);
-    if (!Number.isFinite(n) || n <= 0) return;
-    setWeight(displayWeight(doughballWeightFromSize(n, inputs.style)));
+  function handleSizeBlur() {
+    const n = parseFloat(size);
+    if (!Number.isFinite(n) || n <= 0) {
+      setWeight(displayWeight(inputs.doughballWeight));
+      setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
+      return;
+    }
+    const inches = clamp(n, LIMITS.pizzaSizeIn.min, LIMITS.pizzaSizeIn.max);
+    setSize(String(roundTo(inches, 1)));
+    setWeight(displayWeight(doughballWeightFromSize(inches, inputs.style)));
   }
 
   function apply() {
@@ -124,7 +143,8 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
             max={roundTo(toDisplayMass(LIMITS.doughballWeight.max, massUnit), 2)}
             step={massUnit === "oz" ? 0.1 : 1}
             value={weight}
-            onChange={(e) => handleWeightChange(e.target.value)}
+            onChange={(e) => setWeight(e.target.value)}
+            onBlur={handleWeightBlur}
             className={inputClasses}
           />
         </label>
@@ -139,7 +159,8 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
             max={LIMITS.pizzaSizeIn.max}
             step={0.5}
             value={size}
-            onChange={(e) => handleSizeChange(e.target.value)}
+            onChange={(e) => setSize(e.target.value)}
+            onBlur={handleSizeBlur}
             className={inputClasses}
           />
         </label>

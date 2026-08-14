@@ -95,16 +95,21 @@ export function StepThree() {
       detail: `${mixParts.join(", ")}. Mix 5 to 8 minutes, then bench knead 8 to 10 minutes until smooth and elastic. Cover and rest 20 minutes.`,
     });
 
-    steps.push({
-      title: "Bulk Rise",
-      detail: `Let the dough mass rise at ${roomTemp} for ${formatHours(
-        schedule.bulkHours
-      )}, until visibly risen and airy.`,
-    });
-
     if (inputs.coldFerment) {
+      // The ambient budget is split around the fridge, so each side of it is
+      // named and timed rather than folded into one "bulk rise". A very short
+      // budget can leave nothing for the pre-fridge rest, in which case the
+      // stage is dropped instead of printed as "0m".
+      if (schedule.bulkHours >= 1 / 60) {
+        steps.push({
+          title: "Pre-fridge Bulk Rest",
+          detail: `Let the dough mass rest at ${roomTemp} for ${formatHours(
+            schedule.bulkHours
+          )} to get fermentation started before it goes cold.`,
+        });
+      }
       steps.push({
-        title: "Ball & Cold Ferment",
+        title: "Cold Fermentation",
         detail: `Divide into ${inputs.pizzaCount} doughballs of ${mass(
           inputs.doughballWeight
         )} each. Place in lightly oiled containers and refrigerate at ${formatTemp(
@@ -113,12 +118,18 @@ export function StepThree() {
         )} for ${formatHours(schedule.coldHours)}.`,
       });
       steps.push({
-        title: "Temper & Final Proof",
-        detail: `Take the doughballs out of the fridge ${formatHours(
+        title: "Post-fridge Temper & Ball Proof",
+        detail: `Take the doughballs out ${formatHours(
           schedule.temperHours
-        )} before baking and let them come up to ${roomTemp}. They should feel soft, puffy and relaxed.`,
+        )} before baking and let them come up to ${roomTemp}. They should feel soft, puffy and relaxed before you stretch them.`,
       });
     } else {
+      steps.push({
+        title: "Bulk Rise",
+        detail: `Let the dough mass rise at ${roomTemp} for ${formatHours(
+          schedule.bulkHours
+        )}, until visibly risen and airy.`,
+      });
       steps.push({
         title: "Ball & Final Proof",
         detail: `Divide into ${inputs.pizzaCount} doughballs of ${mass(
@@ -190,6 +201,19 @@ export function StepThree() {
       </div>
 
       <TopBadges recipe={recipe} settings={settings} />
+
+      {recipe.warnings.length > 0 && (
+        <div className="space-y-2">
+          {recipe.warnings.map((w) => (
+            <p
+              key={w}
+              className="rounded-xl bg-surface-sunken p-3 text-xs text-text-muted"
+            >
+              {w}
+            </p>
+          ))}
+        </div>
+      )}
 
       <section className="rounded-2xl border border-border bg-surface p-5" aria-labelledby="ingredients-heading">
         <h2 id="ingredients-heading" className="mb-4 text-xs font-semibold uppercase tracking-wide text-text-muted">
