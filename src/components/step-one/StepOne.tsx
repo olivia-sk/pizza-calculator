@@ -74,7 +74,7 @@ export function StepOne() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="font-display text-2xl font-bold tracking-tight text-text">
-            Pizza Dough Calculator <span aria-hidden="true">🍕</span>
+            Pizza Calculator <span aria-hidden="true">🍕</span>
           </h1>
           <p className="text-sm text-text-muted">Step 1 of 3</p>
         </div>

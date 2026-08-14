@@ -28,9 +28,16 @@ const andersonUltrabold = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Pizza Dough Calculator",
+  title: "Pizza Calculator",
   description:
     "A precision pizza dough calculator with baker's math, temperature-aware yeast dosing, and poolish preferment support.",
+  icons: {
+    icon: [
+      { url: "/favicon16x16.ico", sizes: "16x16", type: "image/x-icon" },
+      { url: "/favicon32x32.ico", sizes: "32x32", type: "image/x-icon" },
+      { url: "/favicon48x48.ico", sizes: "48x48", type: "image/x-icon" },
+    ],
+  },
 };
 
 export const viewport: Viewport = {

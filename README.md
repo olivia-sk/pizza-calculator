@@ -1,8 +1,8 @@
-# Pizza Dough Calculator 🍕
+# Pizza Calculator 🍕
 
 A baker's-percentage pizza dough calculator. Pick a style and pizza size,
 set your fermentation schedule, and get a full recipe with a step-by-step
-timeline — for straight dough, poolish preferment, or sourdough starter.
+timeline for straight dough, poolish preferment, or sourdough starter.
 
 ## Features
 
