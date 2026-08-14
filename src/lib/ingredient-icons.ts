@@ -15,10 +15,10 @@ const ICONS: ReadonlyArray<readonly [keyword: string, emoji: string]> = [
   ["honey", "🍯"],
   ["oil", "🫒"],
   ["yeast", "🦠"],
-  ["sourdough", "🦠"],
-  ["starter", "🦠"],
-  ["poolish", "🦠"],
-  ["preferment", "🦠"],
+  ["sourdough", "🫙"],
+  ["starter", "🫙"],
+  ["poolish", "🫙"],
+  ["preferment", "🫙"],
 ];
 
 export function ingredientIcon(label: string): string | undefined {
