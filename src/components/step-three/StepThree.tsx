@@ -215,8 +215,8 @@ export function StepThree() {
               <li className="text-xs font-bold uppercase tracking-wide text-accent-700">
                 Poolish
               </li>
-              <IngredientRow label="Poolish Flour" value={formatMass(recipe.poolish.flour, massUnit)} />
-              <IngredientRow label="Poolish Water" value={formatMass(recipe.poolish.water, massUnit)} />
+              <IngredientRow label="Flour" value={formatMass(recipe.poolish.flour, massUnit)} />
+              <IngredientRow label="Water" value={formatMass(recipe.poolish.water, massUnit)} />
               <IngredientRow label="Honey / Malt" value={formatMass(recipe.poolish.honey, massUnit)} />
               <IngredientRow label={recipe.yeastLabel} value={formatMass(recipe.poolish.yeast, massUnit)} />
               <li className="pt-2 text-xs font-bold uppercase tracking-wide text-accent-700">
@@ -230,8 +230,8 @@ export function StepThree() {
               <li className="text-xs font-bold uppercase tracking-wide text-accent-700">
                 Biga
               </li>
-              <IngredientRow label="Biga Flour" value={formatMass(recipe.biga.flour, massUnit)} />
-              <IngredientRow label="Biga Water" value={formatMass(recipe.biga.water, massUnit)} />
+              <IngredientRow label="Flour" value={formatMass(recipe.biga.flour, massUnit)} />
+              <IngredientRow label="Water" value={formatMass(recipe.biga.water, massUnit)} />
               <IngredientRow label={recipe.yeastLabel} value={formatMass(recipe.biga.yeast, massUnit)} />
               <li className="pt-2 text-xs font-bold uppercase tracking-wide text-accent-700">
                 Main Dough
