@@ -7,7 +7,7 @@ import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
 import {
   LONG_COLD_HOURS,
-  MIN_BIGA_AMBIENT_HOURS,
+  MIN_BIGA_HOURS,
   MIN_POOLISH_AMBIENT_HOURS,
 } from "@/constants/dough";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
@@ -42,6 +42,17 @@ export function StepTwo() {
   const coldMax = toDisplay(LIMITS.coldTempC.max);
 
   const effHours = effectiveFermentationHours(inputs);
+
+  // Shown once, as the banner under the slider — filtered back out of
+  // recipe.warnings below so the dose preview doesn't repeat it.
+  const showPoolishWarning =
+    inputs.leavening === "poolish" &&
+    inputs.fermentationHours < MIN_POOLISH_AMBIENT_HOURS;
+  const showBigaWarning =
+    inputs.leavening === "biga" && inputs.fermentationHours < MIN_BIGA_HOURS;
+  const doseWarnings = recipe.warnings.filter(
+    (w) => !w.startsWith("Poolish preferments") && !w.startsWith("Biga preferments")
+  );
 
   return (
     <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-28 safe-top">
@@ -79,20 +90,18 @@ export function StepTwo() {
             temper and ball proof. The fridge stage below is on top of this.
           </p>
         )}
-        {inputs.leavening === "poolish" &&
-          inputs.fermentationHours < MIN_POOLISH_AMBIENT_HOURS && (
-            <InfoBadge tone="warn">
-              Poolish preferments require at least 6&ndash;8 hours at room
-              temperature to mature and develop flavor.
-            </InfoBadge>
-          )}
-        {inputs.leavening === "biga" &&
-          inputs.fermentationHours < MIN_BIGA_AMBIENT_HOURS && (
-            <InfoBadge tone="warn">
-              Biga preferments require at least 12&ndash;16 hours, ideally at a
-              cool 16&ndash;18°C, to mature and develop strength.
-            </InfoBadge>
-          )}
+        {showPoolishWarning && (
+          <InfoBadge tone="warn">
+            Poolish preferments require at least 6&ndash;8 hours at room
+            temperature to mature and develop flavor.
+          </InfoBadge>
+        )}
+        {showBigaWarning && (
+          <InfoBadge tone="warn">
+            Biga preferments require at least 12&ndash;16 hours, ideally at a
+            cool 16&ndash;18°C, to mature and develop strength.
+          </InfoBadge>
+        )}
       </section>
 
       <section className="rounded-2xl border border-border bg-surface px-4 py-5">
@@ -167,7 +176,7 @@ export function StepTwo() {
             </dd>
           </div>
         </dl>
-        {recipe.warnings.map((w) => (
+        {doseWarnings.map((w) => (
           <p key={w} className="mt-3 rounded-xl bg-surface-sunken p-3 text-xs text-text-muted">
             {w}
           </p>

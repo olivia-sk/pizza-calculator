@@ -230,6 +230,11 @@ describe("biga guardrails", () => {
     const salty = calculateRecipe(inputs({ leavening: "biga", saltPercent: 3.5 }));
     expect(lean.yeastPercent).toBeCloseTo(salty.yeastPercent, 9);
   });
+
+  it("labels the biga's yeast as Instant Dry Yeast, not the preferment method", () => {
+    const r = calculateRecipe(inputs({ leavening: "biga" }));
+    expect(r.yeastLabel).toBe("Instant Dry Yeast");
+  });
 });
 
 describe("salt retardation", () => {

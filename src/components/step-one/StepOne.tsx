@@ -6,7 +6,7 @@ import { Select } from "@/components/select/Select";
 import { Stepper } from "@/components/stepper/Stepper";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import { doughballWeightFromSize, formatMass, roundTo } from "@/lib/calculations";
-import { STYLES, YEAST_LABELS } from "@/constants/dough";
+import { LEAVENING_METHOD_LABELS, STYLES } from "@/constants/dough";
 import { PizzaStyle, OvenType } from "@/types";
 import { DoughballModal } from "@/components/doughball-modal/DoughballModal";
 import { HydrationModal } from "@/components/hydration-modal/HydrationModal";
@@ -147,7 +147,7 @@ export function StepOne() {
 
       <SummaryRow
         label="Leavening Method"
-        value={YEAST_LABELS[inputs.leavening]}
+        value={LEAVENING_METHOD_LABELS[inputs.leavening]}
         onClick={() => setLeaveningModal(true)}
       />
 

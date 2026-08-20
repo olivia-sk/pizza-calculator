@@ -87,13 +87,32 @@ export const SUGAR_PRESETS: Preset[] = [
   { value: 2.0, label: "Standard NY" },
 ];
 
-export const YEAST_LABELS: Record<LeaveningType, string> = {
+/**
+ * The leavening method's own name, for the Step 1 selector card and summary.
+ * A biga is a *method*, not the ingredient added to it — see YEAST_LABELS for
+ * what actually goes in the recipe and workflow copy.
+ */
+export const LEAVENING_METHOD_LABELS: Record<LeaveningType, string> = {
   idy: "Instant Dry Yeast",
   ady: "Active Dry Yeast",
   fresh: "Fresh Yeast",
   sourdough: "Sourdough Starter",
   poolish: "Poolish Preferment",
   biga: "Biga (Stiff Preferment)",
+};
+
+/**
+ * The leavening ingredient itself, as it appears in badges, dose previews,
+ * ingredient lists and workflow copy. A biga is a stiff preferment built with
+ * instant dry yeast, so its ingredient label is the yeast, not the method.
+ */
+export const YEAST_LABELS: Record<LeaveningType, string> = {
+  idy: "Instant Dry Yeast",
+  ady: "Active Dry Yeast",
+  fresh: "Fresh Yeast",
+  sourdough: "Sourdough Starter",
+  poolish: "Poolish Preferment",
+  biga: "Instant Dry Yeast",
 };
 
 /**
