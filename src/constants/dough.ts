@@ -93,6 +93,7 @@ export const YEAST_LABELS: Record<LeaveningType, string> = {
   fresh: "Fresh Yeast",
   sourdough: "Sourdough Starter",
   poolish: "Poolish Preferment",
+  biga: "Biga (Stiff Preferment)",
 };
 
 /**
@@ -101,7 +102,7 @@ export const YEAST_LABELS: Record<LeaveningType, string> = {
  * ~70% water, so it takes ~3x the mass of IDY.
  */
 export const YEAST_CONVERSION: Record<
-  Exclude<LeaveningType, "sourdough" | "poolish">,
+  Exclude<LeaveningType, "sourdough" | "poolish" | "biga">,
   number
 > = {
   idy: 1.0,
@@ -209,5 +210,37 @@ export const POOLISH_HONEY_PERCENT = 0.5;
 
 /** Starter is assumed to be a 100% hydration levain: half flour, half water. */
 export const STARTER_HYDRATION = 1.0;
+
+/**
+ * Preferment dosing curve (biga), as a percentage of the *biga* flour. A biga
+ * is a stiff (45% hydration), unsalted preferment: the low water content
+ * limits enzymatic and yeast activity compared to a fluid poolish, so it
+ * needs a longer window and a larger dose per hour of maturation. Calibrated
+ * so that 16 h at 18 C, the classic overnight biga, lands on ~0.35% IDY of
+ * the biga flour.
+ */
+export const BIGA_MODEL = {
+  C: 17.6,
+  n: 1.5,
+  k: 0.08,
+  refTempC: 21,
+  minPercent: 0.01,
+  maxPercent: 1.5,
+} as const;
+
+/**
+ * A biga is not ready until the stiff dough has visibly domed and started to
+ * collapse at the center. Under 12 h it has not developed the acidity and
+ * strength that define the style, and under 16 h of total ambient time there
+ * is no room left for the final dough to rise after the preferment matures.
+ */
+export const MIN_BIGA_HOURS = 12;
+export const MIN_BIGA_AMBIENT_HOURS = 16;
+
+/** Share of total flour that goes into the biga. */
+export const BIGA_FLOUR_FRACTION = 0.5;
+
+/** A biga is a stiff preferment: 45% hydration, far below the final dough. */
+export const BIGA_HYDRATION = 0.45;
 
 export const GRAMS_PER_OUNCE = 28.349523125;

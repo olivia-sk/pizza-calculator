@@ -16,6 +16,7 @@ describe("ingredientIcon", () => {
     expect(ingredientIcon("Sourdough Starter")).toBe(JAR);
     expect(ingredientIcon("Ripe Starter (100% hydration)")).toBe(JAR);
     expect(ingredientIcon("Poolish Preferment")).toBe(JAR);
+    expect(ingredientIcon("Biga (Stiff Preferment)")).toBe(JAR);
     expect(ingredientIcon("Instant Dry Yeast")).toBe("🦠");
   });
 
@@ -30,6 +31,7 @@ describe("ingredientIcon", () => {
 
   it("resolves a compound label to its ingredient noun", () => {
     expect(ingredientIcon("Poolish Flour")).toBe("🌾");
+    expect(ingredientIcon("Biga Flour")).toBe("🌾");
   });
 
   it("returns nothing for a label that names no ingredient", () => {

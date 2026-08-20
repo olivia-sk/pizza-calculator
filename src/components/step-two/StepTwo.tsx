@@ -5,7 +5,11 @@ import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
-import { LONG_COLD_HOURS, MIN_POOLISH_AMBIENT_HOURS } from "@/constants/dough";
+import {
+  LONG_COLD_HOURS,
+  MIN_BIGA_AMBIENT_HOURS,
+  MIN_POOLISH_AMBIENT_HOURS,
+} from "@/constants/dough";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
   calculateRecipe,
@@ -80,6 +84,13 @@ export function StepTwo() {
             <InfoBadge tone="warn">
               Poolish preferments require at least 6&ndash;8 hours at room
               temperature to mature and develop flavor.
+            </InfoBadge>
+          )}
+        {inputs.leavening === "biga" &&
+          inputs.fermentationHours < MIN_BIGA_AMBIENT_HOURS && (
+            <InfoBadge tone="warn">
+              Biga preferments require at least 12&ndash;16 hours, ideally at a
+              cool 16&ndash;18°C, to mature and develop strength.
             </InfoBadge>
           )}
       </section>

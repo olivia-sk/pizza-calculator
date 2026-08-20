@@ -7,7 +7,13 @@ export type PizzaStyle =
 
 export type OvenType = "high" | "low";
 
-export type LeaveningType = "idy" | "ady" | "fresh" | "sourdough" | "poolish";
+export type LeaveningType =
+  | "idy"
+  | "ady"
+  | "fresh"
+  | "sourdough"
+  | "poolish"
+  | "biga";
 
 export type TempUnit = "C" | "F";
 export type MassUnit = "g" | "oz";
@@ -72,6 +78,13 @@ export interface StarterBreakdown {
   water: number;
 }
 
+export interface BigaBreakdown {
+  flour: number;
+  water: number;
+  yeast: number;
+  hours: number;
+}
+
 export interface RecipeResult {
   totalDoughWeight: number;
   /** Total flour in the formula = 100%. Includes preferment / starter flour. */
@@ -87,10 +100,11 @@ export interface RecipeResult {
   yeastPercent: number;
   /** Dose as a percent of the flour it is actually measured against. */
   yeastDosePercent: number;
-  yeastDoseBasis: "total flour" | "poolish flour";
+  yeastDoseBasis: "total flour" | "poolish flour" | "biga flour";
   yeastLabel: string;
   starter: StarterBreakdown | null;
   poolish: PoolishBreakdown | null;
+  biga: BigaBreakdown | null;
   /** Flour and water to weigh out for the final mix (preferment excluded). */
   mainDough: {
     flour: number;
@@ -110,6 +124,8 @@ export interface RecipeResult {
 export interface Schedule {
   /** Room-temperature hours spent fermenting the poolish. */
   poolishHours: number;
+  /** Room-temperature hours spent fermenting the biga. */
+  bigaHours: number;
   bulkHours: number;
   /** Final proof at room temperature (no cold stage). */
   ballRestHours: number;

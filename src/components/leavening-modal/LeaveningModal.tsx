@@ -19,6 +19,7 @@ const OPTIONS: { id: LeaveningType; title: string; subtitle: string }[] = [
   { id: "fresh", title: "Fresh Yeast", subtitle: "Compressed (cake) yeast, 3× IDY" },
   { id: "sourdough", title: "Sourdough Starter", subtitle: "Lievito madre, natural leaven" },
   { id: "poolish", title: "Poolish Preferment", subtitle: "Overnight starter, 100% hydration" },
+  { id: "biga", title: "Biga", subtitle: "Stiff Italian preferment, 45% hydration" },
 ];
 
 export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
@@ -93,6 +94,15 @@ export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
           early activity. The yeast is dosed against the poolish flour for the
           poolish&apos;s own window, so it stays far smaller than a straight
           dough dose.
+        </p>
+      )}
+
+      {inputs.leavening === "biga" && (
+        <p className="mt-6 rounded-xl bg-accent-50 p-3 text-xs text-accent-700">
+          50% of the total flour ferments separately as a stiff, unsalted 45%
+          hydration biga, traditionally at a cool 16-18°C for 12-18 hours. The
+          yeast is dosed against the biga flour for its own slower window, then
+          the biga is broken up and worked into the final dough.
         </p>
       )}
     </Modal>

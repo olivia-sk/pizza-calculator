@@ -28,6 +28,7 @@ export function StepThree() {
   const recipe = calculateRecipe(inputs);
   const massUnit = settings.massUnit;
   const isPoolish = inputs.leavening === "poolish";
+  const isBiga = inputs.leavening === "biga";
   const isSourdough = inputs.leavening === "sourdough";
 
   const timeline: TimelineStep[] = useMemo(() => {
@@ -49,6 +50,19 @@ export function StepThree() {
       });
     }
 
+    if (isBiga && recipe.biga) {
+      steps.push({
+        title: "Build the Biga",
+        detail: `Mix ${mass(recipe.biga.flour)} flour and ${mass(
+          recipe.biga.water
+        )} water with ${mass(
+          recipe.biga.yeast
+        )} of ${recipe.yeastLabel.toLowerCase()} into a stiff, shaggy mass; do not knead smooth. Cover and ferment at a cool 16-18°C for ${formatHours(
+          schedule.bigaHours
+        )}, until domed and just beginning to collapse at the center.`,
+      });
+    }
+
     if (isSourdough && recipe.starter) {
       steps.push({
         title: "Ready the Starter",
@@ -66,6 +80,12 @@ export function StepThree() {
     if (isPoolish) {
       mixParts.push(
         `Combine the poolish with the remaining ${mass(
+          recipe.mainDough.flour
+        )} flour and ${mass(recipe.mainDough.water)} water`
+      );
+    } else if (isBiga) {
+      mixParts.push(
+        `Break up the biga and combine it with the remaining ${mass(
           recipe.mainDough.flour
         )} flour and ${mass(recipe.mainDough.water)} water`
       );
@@ -144,7 +164,7 @@ export function StepThree() {
     });
 
     return steps;
-  }, [inputs, recipe, massUnit, settings.tempUnit, isPoolish, isSourdough]);
+  }, [inputs, recipe, massUnit, settings.tempUnit, isPoolish, isBiga, isSourdough]);
 
   const roomTimeTotal = roundTo(inputs.fermentationHours, 2);
 
@@ -199,6 +219,20 @@ export function StepThree() {
               <IngredientRow label="Poolish Water" value={formatMass(recipe.poolish.water, massUnit)} />
               <IngredientRow label="Honey / Malt" value={formatMass(recipe.poolish.honey, massUnit)} />
               <IngredientRow label={recipe.yeastLabel} value={formatMass(recipe.poolish.yeast, massUnit)} />
+              <li className="pt-2 text-xs font-bold uppercase tracking-wide text-accent-700">
+                Main Dough
+              </li>
+              <IngredientRow label="Remaining Flour" value={formatMass(recipe.mainDough.flour, massUnit)} />
+              <IngredientRow label="Remaining Water" value={formatMass(recipe.mainDough.water, massUnit)} />
+            </>
+          ) : isBiga && recipe.biga ? (
+            <>
+              <li className="text-xs font-bold uppercase tracking-wide text-accent-700">
+                Biga
+              </li>
+              <IngredientRow label="Biga Flour" value={formatMass(recipe.biga.flour, massUnit)} />
+              <IngredientRow label="Biga Water" value={formatMass(recipe.biga.water, massUnit)} />
+              <IngredientRow label={recipe.yeastLabel} value={formatMass(recipe.biga.yeast, massUnit)} />
               <li className="pt-2 text-xs font-bold uppercase tracking-wide text-accent-700">
                 Main Dough
               </li>

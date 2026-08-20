@@ -1,6 +1,11 @@
 import {
+  BIGA_FLOUR_FRACTION,
+  BIGA_HYDRATION,
+  BIGA_MODEL,
   COLD_DECAY_K,
   GRAMS_PER_OUNCE,
+  MIN_BIGA_AMBIENT_HOURS,
+  MIN_BIGA_HOURS,
   MIN_POOLISH_AMBIENT_HOURS,
   MIN_POOLISH_HOURS,
   MIN_TEMPER_H,
@@ -119,6 +124,15 @@ export function calcPoolishIdyPercent(hours: number, roomTempC: number): number 
 }
 
 /**
+ * Instant dry yeast, percent of the *biga* flour, for the preferment.
+ * Deliberately not salt-corrected: a biga is unsalted, so the salt in the
+ * final dough never reaches the yeast during the preferment's own rise.
+ */
+export function calcBigaIdyPercent(hours: number, roomTempC: number): number {
+  return dose(BIGA_MODEL, hours, roomTempC);
+}
+
+/**
  * A sensible sourdough starter dose, percent of total flour. A levain is as
  * osmotically sensitive as commercial yeast, so it takes the same salt
  * correction, re-clamped afterwards because the multiplier can push the
@@ -209,6 +223,7 @@ export function resolveFormula(
 export function buildSchedule(inputs: WizardInputs): Schedule {
   const total = Math.max(inputs.fermentationHours, 0.5);
   const isPoolish = inputs.leavening === "poolish";
+  const isBiga = inputs.leavening === "biga";
 
   // The poolish takes roughly half the budget, held to a 6-16 h window, and
   // always leaves at least 2 h (or a third of the budget) for the final dough.
@@ -224,7 +239,19 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
       )
     : 0;
 
-  const remaining = Math.max(total - poolishHours, 0);
+  // A biga is stiffer and slower than a poolish, so it claims more of the
+  // budget (60%) and a wider window (12-18 h), with the same floor-vs-cap
+  // handoff: the 12 h floor wins whenever the budget can afford it, which is
+  // from 16 h of ambient time up.
+  const bigaHours = isBiga
+    ? clamp(
+        clamp(total * 0.6, MIN_BIGA_HOURS, 18),
+        0,
+        Math.max(total - 2, total / 3)
+      )
+    : 0;
+
+  const remaining = Math.max(total - poolishHours - bigaHours, 0);
   const coldHours = inputs.coldFerment ? Math.max(inputs.coldHours, 0) : 0;
 
   if (inputs.coldFerment) {
@@ -244,6 +271,7 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
     );
     return {
       poolishHours,
+      bigaHours,
       bulkHours: remaining - temperHours,
       ballRestHours: 0,
       temperHours,
@@ -255,6 +283,7 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
   const bulkHours = remaining * 0.6;
   return {
     poolishHours,
+    bigaHours,
     bulkHours,
     ballRestHours: remaining - bulkHours,
     temperHours: 0,
@@ -292,6 +321,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
 
   const isSourdough = inputs.leavening === "sourdough";
   const isPoolish = inputs.leavening === "poolish";
+  const isBiga = inputs.leavening === "biga";
 
   const schedule = buildSchedule(inputs);
   const effHours = schedule.effectiveHours;
@@ -321,6 +351,12 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     yeastDoseBasis = "poolish flour";
     yeastPercent = yeastDosePercent * POOLISH_FLOUR_FRACTION;
     honeyPercent = POOLISH_HONEY_PERCENT;
+  } else if (isBiga) {
+    // Dosed against the biga flour, for the biga's own fermentation window,
+    // not against total flour for the whole bulk.
+    yeastDosePercent = calcBigaIdyPercent(schedule.bigaHours, inputs.roomTempC);
+    yeastDoseBasis = "biga flour";
+    yeastPercent = yeastDosePercent * BIGA_FLOUR_FRACTION;
   } else {
     const conv = YEAST_CONVERSION[inputs.leavening as "idy" | "ady" | "fresh"];
     const base = calcIdyPercent(effHours, inputs.roomTempC);
@@ -353,6 +389,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
 
   // --- Split off the preferment / starter -----------------------------------
   let poolish: RecipeResult["poolish"] = null;
+  let biga: RecipeResult["biga"] = null;
   let starter: RecipeResult["starter"] = null;
   let mainDough = { flour: totalFlour, water: totalWater };
 
@@ -376,6 +413,27 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     if (H < POOLISH_FLOUR_FRACTION) {
       warnings.push(
         "Hydration is below the water held in the poolish. Raise hydration above 30%."
+      );
+    }
+  } else if (isBiga) {
+    const bigaFlour = totalFlour * BIGA_FLOUR_FRACTION;
+    const bigaWater = bigaFlour * BIGA_HYDRATION;
+    biga = {
+      flour: bigaFlour,
+      water: bigaWater,
+      yeast: yeastWeight,
+      hours: schedule.bigaHours,
+    };
+    // Clamped at zero because a negative weigh-out is unusable, but that clamp
+    // destroys mass, so the formula has to be flagged rather than quietly
+    // rendering numbers that no longer add up to the dough weight.
+    mainDough = {
+      flour: totalFlour - bigaFlour,
+      water: Math.max(totalWater - bigaWater, 0),
+    };
+    if (H < BIGA_FLOUR_FRACTION * BIGA_HYDRATION) {
+      warnings.push(
+        "Hydration is below the water held in the biga. Raise hydration above 22.5%."
       );
     }
   } else if (isSourdough) {
@@ -404,6 +462,12 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     );
   }
 
+  if (isBiga && inputs.fermentationHours < MIN_BIGA_AMBIENT_HOURS) {
+    warnings.push(
+      "Biga preferments require at least 12-16 hours, ideally at a cool 16-18°C, to mature and develop strength."
+    );
+  }
+
   if (inputs.coldFerment && schedule.bulkHours <= 0) {
     warnings.push(
       "Not enough ambient time to both bulk and temper. Allow at least 3 hours at room temperature around the fridge stage."
@@ -417,6 +481,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     mainDough.flour +
     mainDough.water +
     (poolish ? poolish.flour + poolish.water : 0) +
+    (biga ? biga.flour + biga.water : 0) +
     (starter ? starter.weight : 0) +
     salt +
     oil +
@@ -459,6 +524,12 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       honey: r2(poolish.honey),
       yeast: r2(poolish.yeast),
       hours: poolish.hours,
+    },
+    biga: biga && {
+      flour: r1(biga.flour),
+      water: r1(biga.water),
+      yeast: r2(biga.yeast),
+      hours: biga.hours,
     },
     mainDough: { flour: r1(mainDough.flour), water: r1(mainDough.water) },
     // Built from the same clamped fractions the weights are, so the badges can

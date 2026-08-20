@@ -6,11 +6,18 @@ import {
   saltRetardationFactor,
 } from "./calculations";
 import { LIMITS, defaultInputs } from "./store";
-import { MIN_POOLISH_HOURS, STYLES } from "@/constants/dough";
+import { MIN_BIGA_HOURS, MIN_POOLISH_HOURS, STYLES } from "@/constants/dough";
 import { LeaveningType, PizzaStyle, WizardInputs } from "@/types";
 
 const STYLE_IDS = Object.keys(STYLES) as PizzaStyle[];
-const LEAVENINGS: LeaveningType[] = ["idy", "ady", "fresh", "sourdough", "poolish"];
+const LEAVENINGS: LeaveningType[] = [
+  "idy",
+  "ady",
+  "fresh",
+  "sourdough",
+  "poolish",
+  "biga",
+];
 
 function inputs(overrides: Partial<WizardInputs> = {}): WizardInputs {
   return { ...defaultInputs, ...overrides };
@@ -26,6 +33,7 @@ function weighedTotal(r: ReturnType<typeof calculateRecipe>): number {
     r.mainDough.flour +
     r.mainDough.water +
     (r.poolish ? r.poolish.flour + r.poolish.water : 0) +
+    (r.biga ? r.biga.flour + r.biga.water : 0) +
     (r.starter ? r.starter.weight : 0) +
     r.salt +
     r.oil +
@@ -108,9 +116,10 @@ describe("schedule", () => {
   it("splits the ambient budget without gaining or losing time", () => {
     for (let hours = LIMITS.fermentationHours.min; hours <= LIMITS.fermentationHours.max; hours += 0.25) {
       for (const coldFerment of [false, true]) {
-        for (const leavening of ["idy", "poolish"] as LeaveningType[]) {
+        for (const leavening of ["idy", "poolish", "biga"] as LeaveningType[]) {
           const s = buildSchedule(inputs({ fermentationHours: hours, coldFerment, leavening }));
-          const ambient = s.poolishHours + s.bulkHours + s.ballRestHours + s.temperHours;
+          const ambient =
+            s.poolishHours + s.bigaHours + s.bulkHours + s.ballRestHours + s.temperHours;
           expect(ambient, `${hours}h/${leavening}/${coldFerment}`).toBeCloseTo(hours, 9);
         }
       }
@@ -140,6 +149,11 @@ describe("schedule", () => {
       expect(s.bulkHours).toBeGreaterThanOrEqual(0);
       expect(s.temperHours).toBeGreaterThanOrEqual(0);
       expect(s.poolishHours).toBeGreaterThanOrEqual(0);
+
+      const b = buildSchedule(inputs({ fermentationHours: hours, coldFerment: true, leavening: "biga" }));
+      expect(b.bulkHours).toBeGreaterThanOrEqual(0);
+      expect(b.temperHours).toBeGreaterThanOrEqual(0);
+      expect(b.bigaHours).toBeGreaterThanOrEqual(0);
     }
   });
 });
@@ -175,6 +189,46 @@ describe("poolish guardrails", () => {
       const r = calculateRecipe(inputs({ leavening, fermentationHours: 2 }));
       expect(r.warnings.join(" "), leavening).not.toContain("at least 6-8 hours");
     }
+  });
+});
+
+describe("biga guardrails", () => {
+  it("holds the 12 h preferment floor whenever the ambient budget allows it", () => {
+    for (let hours = 16; hours <= LIMITS.fermentationHours.max; hours += 0.25) {
+      const s = buildSchedule(inputs({ leavening: "biga", fermentationHours: hours }));
+      expect(s.bigaHours, `${hours}h`).toBeGreaterThanOrEqual(MIN_BIGA_HOURS);
+      // The final dough still gets its share; the biga never eats the budget.
+      expect(s.bigaHours, `${hours}h`).toBeLessThanOrEqual(hours - 2);
+    }
+  });
+
+  it("warns when there is not enough ambient time to mature a biga", () => {
+    for (let hours = LIMITS.fermentationHours.min; hours < 16; hours += 0.25) {
+      const r = calculateRecipe(inputs({ leavening: "biga", fermentationHours: hours }));
+      expect(r.warnings.join(" "), `${hours}h`).toContain(
+        "at least 12-16 hours"
+      );
+    }
+  });
+
+  it("stays quiet once the biga has room to mature", () => {
+    for (let hours = 16; hours <= LIMITS.fermentationHours.max; hours += 0.25) {
+      const r = calculateRecipe(inputs({ leavening: "biga", fermentationHours: hours }));
+      expect(r.warnings.join(" "), `${hours}h`).not.toContain("at least 12-16 hours");
+    }
+  });
+
+  it("does not warn about biga timing for other leavening methods", () => {
+    for (const leavening of LEAVENINGS.filter((l) => l !== "biga")) {
+      const r = calculateRecipe(inputs({ leavening, fermentationHours: 2 }));
+      expect(r.warnings.join(" "), leavening).not.toContain("at least 12-16 hours");
+    }
+  });
+
+  it("is dosed unaffected by salt, since a biga is unsalted", () => {
+    const lean = calculateRecipe(inputs({ leavening: "biga", saltPercent: 1.5 }));
+    const salty = calculateRecipe(inputs({ leavening: "biga", saltPercent: 3.5 }));
+    expect(lean.yeastPercent).toBeCloseTo(salty.yeastPercent, 9);
   });
 });
 

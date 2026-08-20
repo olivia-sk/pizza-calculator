@@ -16,7 +16,14 @@ import { StepThreeActions } from "@/components/step-three/StepThreeActions";
 import { ActionBar } from "@/components/action-bar/ActionBar";
 import { Button } from "@/components/button/Button";
 
-const LEAVENINGS: LeaveningType[] = ["idy", "ady", "fresh", "sourdough", "poolish"];
+const LEAVENINGS: LeaveningType[] = [
+  "idy",
+  "ady",
+  "fresh",
+  "sourdough",
+  "poolish",
+  "biga",
+];
 
 /** Reads a shared recipe out of the query string, if one is present. */
 function inputsFromSearch(search: string): Partial<WizardInputs> {
