@@ -51,14 +51,15 @@ export function SliderControl({
         step={step}
         onValueChange={(v) => onChange(v[0])}
       >
-        <Slider.Track className="relative h-1.5 grow rounded-full bg-surface-sunken border border-border">
-          <Slider.Range className="absolute h-full rounded-full bg-accent-500" />
+        <Slider.Track className="relative h-1.5 grow rounded-sm bg-surface-sunken border border-border">
+          <Slider.Range className="absolute h-full rounded-sm bg-accent-500" />
         </Slider.Track>
         <Slider.Thumb
           className={cn(
             // A rounded rectangle reads as a handle you grab, where a circle
-            // reads as a dot you point at.
-            "block h-7 w-[18px] rounded-[9px] border-2 border-accent-500 bg-surface shadow-md",
+            // reads as a dot you point at. The radius stays well under half the
+            // width, or the handle rounds back into a capsule.
+            "block h-7 w-[18px] rounded-lg border-2 border-accent-500 bg-surface shadow-md",
             "cursor-grab active:cursor-grabbing",
             "transition-transform duration-[var(--duration-press)] ease-out",
             "hover:scale-[1.06] active:scale-[0.96]",

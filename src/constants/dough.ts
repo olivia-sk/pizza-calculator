@@ -103,15 +103,16 @@ export const LEAVENING_METHOD_LABELS: Record<LeaveningType, string> = {
 
 /**
  * The leavening ingredient itself, as it appears in badges, dose previews,
- * ingredient lists and workflow copy. A biga is a stiff preferment built with
- * instant dry yeast, so its ingredient label is the yeast, not the method.
+ * ingredient lists and workflow copy. A poolish and a biga are both
+ * preferments built with instant dry yeast, so their ingredient label is the
+ * yeast, not the method.
  */
 export const YEAST_LABELS: Record<LeaveningType, string> = {
   idy: "Instant Dry Yeast",
   ady: "Active Dry Yeast",
   fresh: "Fresh Yeast",
   sourdough: "Sourdough Starter",
-  poolish: "Poolish Preferment",
+  poolish: "Instant Dry Yeast",
   biga: "Instant Dry Yeast",
 };
 

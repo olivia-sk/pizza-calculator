@@ -21,9 +21,10 @@ export function SwitchControl({ checked, onChange, label, description }: SwitchC
       <Switch.Root
         checked={checked}
         onCheckedChange={onChange}
-        className="relative h-7 w-12 shrink-0 rounded-full bg-surface-sunken border border-border-strong outline-none transition-colors duration-150 data-[state=checked]:bg-accent-700 data-[state=checked]:border-accent-700 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
+        className="relative h-7 w-12 shrink-0 rounded-xl bg-surface-sunken border border-border-strong outline-none transition-colors duration-150 data-[state=checked]:bg-accent-700 data-[state=checked]:border-accent-700 focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface"
       >
-        <Switch.Thumb className="block h-5 w-5 translate-x-0.5 rounded-full bg-white shadow-md transition-transform duration-150 will-change-transform data-[state=checked]:translate-x-[22px]" />
+        {/* Concentric with the track: 8px shell, 2px inset, 6px knob. */}
+        <Switch.Thumb className="block h-5 w-5 translate-x-0.5 rounded-lg bg-white shadow-md transition-transform duration-150 will-change-transform data-[state=checked]:translate-x-[22px]" />
       </Switch.Root>
     </label>
   );

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Modal } from "@/components/modal/Modal";
 import { Button } from "@/components/button/Button";
+import { NumberField } from "@/components/number-field/NumberField";
 import { LIMITS, useWizardStore } from "@/lib/store";
 import {
   clamp,
@@ -18,9 +19,8 @@ interface DoughballModalProps {
   onOpenChange: (open: boolean) => void;
 }
 
-const inputClasses =
-  "w-full rounded-xl border border-border-strong bg-surface px-4 py-3 text-lg font-semibold text-text " +
-  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:border-accent-500";
+/** Half an inch is the smallest diameter change worth a chevron press. */
+const SIZE_STEP = 0.5;
 
 export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
   const inputs = useWizardStore((s) => s.inputs);
@@ -46,21 +46,14 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
     setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
   }
 
-  // While typing, the draft is left exactly as typed. Recomputing the paired
-  // field on every keystroke would churn it through nonsense on the way to a
-  // real number: clearing the weight and typing "6" of "600" would briefly
-  // resolve the diameter for a 6 g doughball. Both fields settle on blur.
-  function handleWeightBlur() {
-    const n = parseFloat(weight);
-    if (!Number.isFinite(n) || n <= 0) {
-      setWeight(displayWeight(inputs.doughballWeight));
-      setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
-      return;
-    }
+  // Settles a weight (in display units) and the diameter it implies. Shared by
+  // the blur handler and the chevrons, so a typed value and a stepped one land
+  // on exactly the same pair.
+  function commitWeight(displayValue: number) {
     // Convert to grams first: the limits are metric, so clamping an ounce value
     // against them would reject anything over 1500 oz and cap at 50 oz.
     const grams = clamp(
-      fromDisplayMass(n, massUnit),
+      fromDisplayMass(displayValue, massUnit),
       LIMITS.doughballWeight.min,
       LIMITS.doughballWeight.max
     );
@@ -68,16 +61,48 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
     setSize(String(sizeFromDoughballWeight(grams, inputs.style)));
   }
 
-  function handleSizeBlur() {
-    const n = parseFloat(size);
-    if (!Number.isFinite(n) || n <= 0) {
-      setWeight(displayWeight(inputs.doughballWeight));
-      setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
-      return;
-    }
-    const inches = clamp(n, LIMITS.pizzaSizeIn.min, LIMITS.pizzaSizeIn.max);
+  function commitSize(value: number) {
+    const inches = clamp(value, LIMITS.pizzaSizeIn.min, LIMITS.pizzaSizeIn.max);
     setSize(String(roundTo(inches, 1)));
     setWeight(displayWeight(doughballWeightFromSize(inches, inputs.style)));
+  }
+
+  /** Restores both drafts from the store, for a draft that parses to nothing. */
+  function resetDrafts() {
+    setWeight(displayWeight(inputs.doughballWeight));
+    setSize(String(roundTo(inputs.pizzaSizeIn, 1)));
+  }
+
+  // While typing, the draft is left exactly as typed. Recomputing the paired
+  // field on every keystroke would churn it through nonsense on the way to a
+  // real number: clearing the weight and typing "6" of "600" would briefly
+  // resolve the diameter for a 6 g doughball. Both fields settle on blur.
+  function handleWeightBlur() {
+    const n = parseFloat(weight);
+    if (!Number.isFinite(n) || n <= 0) return resetDrafts();
+    commitWeight(n);
+  }
+
+  function handleSizeBlur() {
+    const n = parseFloat(size);
+    if (!Number.isFinite(n) || n <= 0) return resetDrafts();
+    commitSize(n);
+  }
+
+  // A chevron steps from whatever is in the field, falling back to the stored
+  // value when the draft is mid-edit and unparseable.
+  function stepWeight(direction: 1 | -1) {
+    const current = parseFloat(weight);
+    const base = Number.isFinite(current)
+      ? current
+      : toDisplayMass(inputs.doughballWeight, massUnit);
+    commitWeight(base + direction * weightStep);
+  }
+
+  function stepSize(direction: 1 | -1) {
+    const current = parseFloat(size);
+    const base = Number.isFinite(current) ? current : inputs.pizzaSizeIn;
+    commitSize(base + direction * SIZE_STEP);
   }
 
   function apply() {
@@ -110,6 +135,12 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
   }
 
   const unitLabel = massUnit === "oz" ? "oz" : "g";
+  // An ounce is ~28 g, so a 1-unit step would be a huge jump in ounces.
+  const weightStep = massUnit === "oz" ? 0.1 : 1;
+  const weightMin = roundTo(toDisplayMass(LIMITS.doughballWeight.min, massUnit), 2);
+  const weightMax = roundTo(toDisplayMass(LIMITS.doughballWeight.max, massUnit), 2);
+  const weightValue = parseFloat(weight);
+  const sizeValue = parseFloat(size);
 
   return (
     <Modal
@@ -132,38 +163,30 @@ export function DoughballModal({ open, onOpenChange }: DoughballModalProps) {
         ). Changing one updates the other.
       </p>
       <div className="space-y-4">
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
-            Doughball Weight ({unitLabel})
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            min={roundTo(toDisplayMass(LIMITS.doughballWeight.min, massUnit), 2)}
-            max={roundTo(toDisplayMass(LIMITS.doughballWeight.max, massUnit), 2)}
-            step={massUnit === "oz" ? 0.1 : 1}
-            value={weight}
-            onChange={(e) => setWeight(e.target.value)}
-            onBlur={handleWeightBlur}
-            className={inputClasses}
-          />
-        </label>
-        <label className="block">
-          <span className="mb-1 block text-xs font-medium uppercase tracking-wide text-text-muted">
-            Pizza Size (in)
-          </span>
-          <input
-            type="number"
-            inputMode="decimal"
-            min={LIMITS.pizzaSizeIn.min}
-            max={LIMITS.pizzaSizeIn.max}
-            step={0.5}
-            value={size}
-            onChange={(e) => setSize(e.target.value)}
-            onBlur={handleSizeBlur}
-            className={inputClasses}
-          />
-        </label>
+        <NumberField
+          label={`Doughball Weight (${unitLabel})`}
+          value={weight}
+          onChange={setWeight}
+          onBlur={handleWeightBlur}
+          onStep={stepWeight}
+          min={weightMin}
+          max={weightMax}
+          step={weightStep}
+          atMin={Number.isFinite(weightValue) && weightValue <= weightMin}
+          atMax={Number.isFinite(weightValue) && weightValue >= weightMax}
+        />
+        <NumberField
+          label="Pizza Size (in)"
+          value={size}
+          onChange={setSize}
+          onBlur={handleSizeBlur}
+          onStep={stepSize}
+          min={LIMITS.pizzaSizeIn.min}
+          max={LIMITS.pizzaSizeIn.max}
+          step={SIZE_STEP}
+          atMin={Number.isFinite(sizeValue) && sizeValue <= LIMITS.pizzaSizeIn.min}
+          atMax={Number.isFinite(sizeValue) && sizeValue >= LIMITS.pizzaSizeIn.max}
+        />
       </div>
     </Modal>
   );

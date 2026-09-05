@@ -190,6 +190,11 @@ describe("poolish guardrails", () => {
       expect(r.warnings.join(" "), leavening).not.toContain("at least 6-8 hours");
     }
   });
+
+  it("labels the poolish's yeast as Instant Dry Yeast, not the preferment method", () => {
+    const r = calculateRecipe(inputs({ leavening: "poolish" }));
+    expect(r.yeastLabel).toBe("Instant Dry Yeast");
+  });
 });
 
 describe("biga guardrails", () => {

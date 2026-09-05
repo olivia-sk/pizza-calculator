@@ -12,12 +12,14 @@ describe("ingredientIcon", () => {
     expect(ingredientIcon("Sugar / Honey / Malt")).toBe("🍯");
   });
 
-  it("jars the starter family and leaves dry yeast alone", () => {
+  it("jars every leavening ingredient, yeast included", () => {
     expect(ingredientIcon("Sourdough Starter")).toBe(JAR);
     expect(ingredientIcon("Ripe Starter (100% hydration)")).toBe(JAR);
     expect(ingredientIcon("Poolish Preferment")).toBe(JAR);
     expect(ingredientIcon("Biga (Stiff Preferment)")).toBe(JAR);
-    expect(ingredientIcon("Instant Dry Yeast")).toBe("🦠");
+    expect(ingredientIcon("Instant Dry Yeast")).toBe(JAR);
+    expect(ingredientIcon("Active Dry Yeast")).toBe(JAR);
+    expect(ingredientIcon("Fresh Yeast")).toBe(JAR);
   });
 
   it("ignores an ingredient named only inside a qualifier", () => {

@@ -1,170 +1,65 @@
 "use client";
 
-import { useMemo } from "react";
+import { ReactNode, useMemo, useState } from "react";
 import { ChevronLeft, CheckCircle2 } from "lucide-react";
 import { TopBadges } from "@/components/top-badges/TopBadges";
 import { ingredientIcon } from "@/lib/ingredient-icons";
 import { useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
-  buildSchedule,
   calculateRecipe,
   formatHours,
   formatMass,
-  formatTemp,
   roundTo,
 } from "@/lib/calculations";
-import { STYLES } from "@/constants/dough";
+import { buildWorkflow, PrefermentYeast, WorkflowStep } from "@/lib/workflow";
+import { STYLES, YEAST_CONVERSION, YEAST_LABELS } from "@/constants/dough";
+import { cn } from "@/lib/utils";
 
-interface TimelineStep {
-  title: string;
-  detail: string;
-}
+/** The yeasts a preferment can be built with, in the order the pills read. */
+const PREFERMENT_YEASTS: { id: PrefermentYeast; short: string }[] = [
+  { id: "idy", short: "IDY" },
+  { id: "fresh", short: "Fresh" },
+  { id: "ady", short: "ADY" },
+];
 
 export function StepThree() {
   const inputs = useRecipeInputs();
   const settings = useWizardStore((s) => s.settings);
   const back = useWizardStore((s) => s.back);
 
-  const recipe = calculateRecipe(inputs);
+  const recipe = useMemo(() => calculateRecipe(inputs), [inputs]);
   const massUnit = settings.massUnit;
   const isPoolish = inputs.leavening === "poolish";
   const isBiga = inputs.leavening === "biga";
   const isSourdough = inputs.leavening === "sourdough";
+  const hasYeastSwitcher = isPoolish || isBiga;
 
-  const timeline: TimelineStep[] = useMemo(() => {
-    const schedule = buildSchedule(inputs);
-    const steps: TimelineStep[] = [];
-    const mass = (g: number) => formatMass(g, massUnit);
-    const roomTemp = formatTemp(inputs.roomTempC, settings.tempUnit);
+  // Which yeast the baker is actually building the preferment with. The dose is
+  // solved for instant dry yeast, so switching is a presentation-layer
+  // conversion against the standard multipliers: the formula, and every weight
+  // derived from it, is left exactly as calculated.
+  const [prefermentYeastType, setPrefermentYeastType] =
+    useState<PrefermentYeast>("idy");
 
-    if (isPoolish && recipe.poolish) {
-      steps.push({
-        title: "Build the Poolish",
-        detail: `Mix ${mass(recipe.poolish.flour)} flour, ${mass(
-          recipe.poolish.water
-        )} water and ${mass(recipe.poolish.honey)} honey with ${mass(
-          recipe.poolish.yeast
-        )} of ${recipe.yeastLabel.toLowerCase()}. Cover and ferment at ${roomTemp} for ${formatHours(
-          schedule.poolishHours
-        )}, until bubbly and domed with the first dimples showing.`,
-      });
-    }
+  const prefermentYeast = useMemo(() => {
+    const baseline =
+      recipe.poolish?.yeast ?? recipe.biga?.yeast ?? recipe.yeastWeight;
+    return {
+      type: prefermentYeastType,
+      weight: baseline * YEAST_CONVERSION[prefermentYeastType],
+      label: YEAST_LABELS[prefermentYeastType],
+    };
+  }, [recipe, prefermentYeastType]);
 
-    if (isBiga && recipe.biga) {
-      steps.push({
-        title: "Build the Biga",
-        detail: `Mix ${mass(recipe.biga.flour)} flour and ${mass(
-          recipe.biga.water
-        )} water with ${mass(
-          recipe.biga.yeast
-        )} of ${recipe.yeastLabel.toLowerCase()} into a stiff, shaggy mass; do not knead smooth. Cover and ferment at a cool 16-18°C for ${formatHours(
-          schedule.bigaHours
-        )}, until domed and just beginning to collapse at the center.`,
-      });
-    }
-
-    if (isSourdough && recipe.starter) {
-      steps.push({
-        title: "Ready the Starter",
-        detail: `Use ${mass(
-          recipe.starter.weight
-        )} of ripe 100% hydration starter, at its peak. It carries ${mass(
-          recipe.starter.flour
-        )} flour and ${mass(
-          recipe.starter.water
-        )} water, already counted in the totals below.`,
-      });
-    }
-
-    const mixParts: string[] = [];
-    if (isPoolish) {
-      mixParts.push(
-        `Combine the poolish with the remaining ${mass(
-          recipe.mainDough.flour
-        )} flour and ${mass(recipe.mainDough.water)} water`
-      );
-    } else if (isBiga) {
-      mixParts.push(
-        `Break up the biga and combine it with the remaining ${mass(
-          recipe.mainDough.flour
-        )} flour and ${mass(recipe.mainDough.water)} water`
-      );
-    } else if (isSourdough) {
-      mixParts.push(
-        `Combine the starter with ${mass(recipe.mainDough.flour)} flour and ${mass(
-          recipe.mainDough.water
-        )} water`
-      );
-    } else {
-      mixParts.push(
-        `Combine ${mass(recipe.mainDough.flour)} flour, ${mass(
-          recipe.mainDough.water
-        )} water and ${mass(recipe.yeastWeight)} ${recipe.yeastLabel.toLowerCase()}`
-      );
-    }
-    mixParts.push(`then ${mass(recipe.salt)} salt`);
-    if (recipe.oil > 0) mixParts.push(`${mass(recipe.oil)} oil`);
-    if (recipe.sugar > 0) mixParts.push(`${mass(recipe.sugar)} sugar`);
-
-    steps.push({
-      title: "Mix & Knead",
-      detail: `${mixParts.join(", ")}. Mix 5 to 8 minutes, then bench knead 8 to 10 minutes until smooth and elastic. Cover and rest 20 minutes.`,
-    });
-
-    if (inputs.coldFerment) {
-      // The ambient budget is split around the fridge, so each side of it is
-      // named and timed rather than folded into one "bulk rise". A very short
-      // budget can leave nothing for the pre-fridge rest, in which case the
-      // stage is dropped instead of printed as "0m".
-      if (schedule.bulkHours >= 1 / 60) {
-        steps.push({
-          title: "Pre-fridge Bulk Rest",
-          detail: `Let the dough mass rest at ${roomTemp} for ${formatHours(
-            schedule.bulkHours
-          )} to get fermentation started before it goes cold.`,
-        });
-      }
-      steps.push({
-        title: "Cold Fermentation",
-        detail: `Divide into ${inputs.pizzaCount} doughballs of ${mass(
-          inputs.doughballWeight
-        )} each. Place in lightly oiled containers and refrigerate at ${formatTemp(
-          inputs.coldTempC,
-          settings.tempUnit
-        )} for ${formatHours(schedule.coldHours)}.`,
-      });
-      steps.push({
-        title: "Post-fridge Temper & Ball Proof",
-        detail: `Take the doughballs out ${formatHours(
-          schedule.temperHours
-        )} before baking and let them come up to ${roomTemp}. They should feel soft, puffy and relaxed before you stretch them.`,
-      });
-    } else {
-      steps.push({
-        title: "Bulk Rise",
-        detail: `Let the dough mass rise at ${roomTemp} for ${formatHours(
-          schedule.bulkHours
-        )}, until visibly risen and airy.`,
-      });
-      steps.push({
-        title: "Ball & Final Proof",
-        detail: `Divide into ${inputs.pizzaCount} doughballs of ${mass(
-          inputs.doughballWeight
-        )} each. Cover and proof at ${roomTemp} for ${formatHours(
-          schedule.ballRestHours
-        )}.`,
-      });
-    }
-
-    steps.push({
-      title: "Pizza Time",
-      detail: `Your dough is ready. Stretch gently by hand, top, and bake in your ${
-        inputs.oven === "high" ? "high heat" : "low heat"
-      } oven.`,
-    });
-
-    return steps;
-  }, [inputs, recipe, massUnit, settings.tempUnit, isPoolish, isBiga, isSourdough]);
+  const timeline: WorkflowStep[] = useMemo(
+    () =>
+      buildWorkflow(inputs, recipe, {
+        massUnit,
+        tempUnit: settings.tempUnit,
+        prefermentYeast,
+      }),
+    [inputs, recipe, massUnit, settings.tempUnit, prefermentYeast]
+  );
 
   const roomTimeTotal = roundTo(inputs.fermentationHours, 2);
 
@@ -190,7 +85,20 @@ export function StepThree() {
         </div>
       </div>
 
-      <TopBadges recipe={recipe} settings={settings} />
+      <TopBadges
+        recipe={recipe}
+        settings={settings}
+        yeastOverride={
+          hasYeastSwitcher
+            ? {
+                label: prefermentYeast.label,
+                percent:
+                  recipe.bakersPercent.yeast *
+                  YEAST_CONVERSION[prefermentYeastType],
+              }
+            : undefined
+        }
+      />
 
       {recipe.warnings.length > 0 && (
         <div className="space-y-2">
@@ -218,7 +126,16 @@ export function StepThree() {
               <IngredientRow label="Flour" value={formatMass(recipe.poolish.flour, massUnit)} />
               <IngredientRow label="Water" value={formatMass(recipe.poolish.water, massUnit)} />
               <IngredientRow label="Honey / Malt" value={formatMass(recipe.poolish.honey, massUnit)} />
-              <IngredientRow label={recipe.yeastLabel} value={formatMass(recipe.poolish.yeast, massUnit)} />
+              <IngredientRow
+                label={prefermentYeast.label}
+                value={formatMass(prefermentYeast.weight, massUnit)}
+                control={
+                  <YeastSwitcher
+                    value={prefermentYeastType}
+                    onChange={setPrefermentYeastType}
+                  />
+                }
+              />
               <li className="pt-2 text-xs font-bold uppercase tracking-wide text-accent-700">
                 Main Dough
               </li>
@@ -232,7 +149,16 @@ export function StepThree() {
               </li>
               <IngredientRow label="Flour" value={formatMass(recipe.biga.flour, massUnit)} />
               <IngredientRow label="Water" value={formatMass(recipe.biga.water, massUnit)} />
-              <IngredientRow label={recipe.yeastLabel} value={formatMass(recipe.biga.yeast, massUnit)} />
+              <IngredientRow
+                label={prefermentYeast.label}
+                value={formatMass(prefermentYeast.weight, massUnit)}
+                control={
+                  <YeastSwitcher
+                    value={prefermentYeastType}
+                    onChange={setPrefermentYeastType}
+                  />
+                }
+              />
               <li className="pt-2 text-xs font-bold uppercase tracking-wide text-accent-700">
                 Main Dough
               </li>
@@ -319,11 +245,30 @@ export function StepThree() {
   );
 }
 
-function IngredientRow({ label, value }: { label: string; value: string }) {
+function IngredientRow({
+  label,
+  value,
+  control,
+}: {
+  label: string;
+  value: string;
+  control?: ReactNode;
+}) {
   const icon = ingredientIcon(label);
   return (
-    <li className="flex items-center justify-between text-sm">
-      <span className="flex items-center gap-1.5 text-text-muted">
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
+      {/*
+        A control sits directly beside the name, so the name gets a fixed column
+        wide enough for the longest of them ("Instant Dry Yeast" measures 107px
+        plus the icon). Without it the control would slide as the name changed
+        length on every switch.
+      */}
+      <span
+        className={cn(
+          "order-1 flex min-w-0 flex-1 items-center gap-1.5 text-text-muted",
+          control && "min-[460px]:w-[8.5rem] min-[460px]:flex-none"
+        )}
+      >
         {icon && (
           <span aria-hidden className="text-base leading-none">
             {icon}
@@ -331,7 +276,60 @@ function IngredientRow({ label, value }: { label: string; value: string }) {
         )}
         {label}
       </span>
-      <span className="font-bold text-text tabular-nums">{value}</span>
+      {/*
+        Under ~460px the name, the control and the weight cannot share a line
+        without breaking a name like "Instant Dry Yeast" across three of them,
+        which made the row's height jump on every switch. There the control
+        takes a line of its own, tucked under the name it belongs to.
+      */}
+      {control && (
+        <span className="order-3 flex basis-full min-[460px]:order-2 min-[460px]:basis-auto">
+          {control}
+        </span>
+      )}
+      {/* Fixed-width weight column, so the numbers stay in one tidy column. */}
+      <span className="order-2 ml-auto min-w-[4.5rem] shrink-0 text-right font-bold text-text tabular-nums min-[460px]:order-3">
+        {value}
+      </span>
     </li>
+  );
+}
+
+/** Swaps the preferment between instant, fresh and active dry yeast. */
+function YeastSwitcher({
+  value,
+  onChange,
+}: {
+  value: PrefermentYeast;
+  onChange: (next: PrefermentYeast) => void;
+}) {
+  return (
+    <span
+      role="group"
+      aria-label="Preferment yeast type"
+      className="flex items-center gap-0.5 rounded-lg border border-border bg-surface-sunken p-0.5"
+    >
+      {PREFERMENT_YEASTS.map((y) => {
+        const active = y.id === value;
+        return (
+          <button
+            key={y.id}
+            type="button"
+            aria-pressed={active}
+            onClick={() => onChange(y.id)}
+            className={cn(
+              "rounded-md px-2 py-1 text-xs font-semibold",
+              "transition-[background-color,color] duration-150",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface-sunken",
+              active
+                ? "bg-accent-500 text-white"
+                : "text-text-muted hover:text-text"
+            )}
+          >
+            {y.short}
+          </button>
+        );
+      })}
+    </span>
   );
 }

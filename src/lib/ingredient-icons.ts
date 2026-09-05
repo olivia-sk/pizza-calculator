@@ -14,7 +14,7 @@ const ICONS: ReadonlyArray<readonly [keyword: string, emoji: string]> = [
   ["sugar", "🍯"],
   ["honey", "🍯"],
   ["oil", "🫒"],
-  ["yeast", "🦠"],
+  ["yeast", "🫙"],
   ["sourdough", "🫙"],
   ["starter", "🫙"],
   ["poolish", "🫙"],

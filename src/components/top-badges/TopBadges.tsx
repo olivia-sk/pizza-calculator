@@ -7,9 +7,15 @@ import { RecipeResult, SettingsState } from "@/types";
 interface TopBadgesProps {
   recipe: RecipeResult;
   settings: SettingsState;
+  /**
+   * Step 3 lets a preferment be built with a different yeast than the one it
+   * was dosed against. That is a display-level substitution, so the badge is
+   * told what to say rather than the recipe being recalculated.
+   */
+  yeastOverride?: { label: string; percent: number };
 }
 
-export function TopBadges({ recipe, settings }: TopBadgesProps) {
+export function TopBadges({ recipe, settings, yeastOverride }: TopBadgesProps) {
   if (!settings.showBakersPercent) return null;
 
   const bp = recipe.bakersPercent;
@@ -20,7 +26,10 @@ export function TopBadges({ recipe, settings }: TopBadgesProps) {
     ...(bp.oil > 0 ? [{ label: "Oil", value: formatPercent(bp.oil) }] : []),
     ...(bp.sugar > 0 ? [{ label: "Sugar", value: formatPercent(bp.sugar) }] : []),
     ...(bp.honey > 0 ? [{ label: "Honey", value: formatPercent(bp.honey) }] : []),
-    { label: recipe.yeastLabel, value: formatPercent(bp.yeast) },
+    {
+      label: yeastOverride?.label ?? recipe.yeastLabel,
+      value: formatPercent(yeastOverride?.percent ?? bp.yeast),
+    },
   ];
 
   return (

@@ -24,10 +24,15 @@ function SegmentedControl<T extends string>({
   return (
     <div className="flex items-center justify-between py-3">
       <span className="text-sm font-medium text-text">{label}</span>
+      {/*
+        The selected option is a raised box floating inside a recessed track,
+        not a fill clipped by the track's own corners. Concentric: an 8px track
+        with 4px of padding wraps a 4px box.
+      */}
       <div
         role="radiogroup"
         aria-label={label}
-        className="flex overflow-hidden rounded-xl border border-border-strong"
+        className="flex rounded-xl border border-border-strong bg-surface-sunken p-1"
       >
         {options.map((opt) => (
           <button
@@ -36,11 +41,12 @@ function SegmentedControl<T extends string>({
             aria-checked={value === opt.value}
             onClick={() => onChange(opt.value)}
             className={cn(
-              "min-h-[36px] px-4 py-1.5 text-sm font-semibold transition-colors duration-150",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-surface",
+              "min-h-[36px] rounded-md px-4 py-1.5 text-sm font-semibold",
+              "transition-[background-color,color] duration-150",
+              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-1 focus-visible:ring-offset-surface-sunken",
               value === opt.value
                 ? "bg-inverse text-inverse-text"
-                : "bg-surface text-text-muted hover:bg-surface-sunken"
+                : "text-text-muted hover:text-text"
             )}
           >
             {opt.display}
