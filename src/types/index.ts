@@ -85,6 +85,36 @@ export interface BigaBreakdown {
   hours: number;
 }
 
+/**
+ * Every guardrail the engine can raise, as a stable identity. The UI keys and
+ * filters on the id rather than on the copy, so rewording a warning can never
+ * silently break the component that decides where to show it.
+ */
+export type WarningId =
+  | "formula-unbalanced"
+  | "starter-water"
+  | "starter-flour"
+  | "poolish-hydration"
+  | "biga-hydration"
+  | "yeast-capped"
+  | "overferment-caution"
+  | "overferment-severe"
+  | "microdose-note"
+  | "microdose-warn"
+  | "temper-short"
+  | "ambient-long-with-cold";
+
+/**
+ * A guardrail, not an error: every one of these describes a physical trade-off
+ * the baker is allowed to make on purpose. "note" is an aside, "warn" is a
+ * nudge; neither blocks anything.
+ */
+export interface RecipeWarning {
+  id: WarningId;
+  tone: "note" | "warn";
+  text: string;
+}
+
 export interface RecipeResult {
   totalDoughWeight: number;
   /** Total flour in the formula = 100%. Includes preferment / starter flour. */
@@ -118,14 +148,26 @@ export interface RecipeResult {
     honey: number;
     yeast: number;
   };
-  warnings: string[];
+  warnings: RecipeWarning[];
 }
 
 export interface Schedule {
-  /** Room-temperature hours spent fermenting the poolish. */
+  /**
+   * Hours the poolish spends maturing, over its whole two-stage window. Declared
+   * by POOLISH_SCHEDULE, not carved out of the ambient budget: the preferment is
+   * built a day ahead, so it never competes with the main dough for time.
+   */
   poolishHours: number;
-  /** Room-temperature hours spent fermenting the biga. */
+  /** As poolishHours, for the biga's single cellar-temperature stage. */
   bigaHours: number;
+  /** Ambient hours the preferment spends at room temperature before any chill. */
+  prefermentKickstartHours: number;
+  /** Ambient hours the preferment spends below room temperature. */
+  prefermentColdHours: number;
+  /** The temperature that cold stage is held at. */
+  prefermentColdTempC: number;
+  /** How far ahead of mixing day the preferment has to be started. */
+  prefermentLeadHours: number;
   bulkHours: number;
   /** Final proof at room temperature (no cold stage). */
   ballRestHours: number;
@@ -134,4 +176,10 @@ export interface Schedule {
   coldHours: number;
   /** Room-temperature-equivalent hours used to dose the yeast. */
   effectiveHours: number;
+  /**
+   * Equivalent hours on the *protease* clock, which runs at a flatter Q10 than
+   * the yeast does. This is what bounds how long a dough can ferment before the
+   * gluten degrades, and it is why a smaller dose does not buy unlimited time.
+   */
+  proteolyticHours: number;
 }

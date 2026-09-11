@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { buildSchedule, calculateRecipe, formatHours, formatMass, formatTemp } from "./calculations";
 import { PrefermentYeast, WorkflowStep, buildWorkflow, splitWater } from "./workflow";
 import { LIMITS, defaultInputs } from "./store";
-import { YEAST_CONVERSION, YEAST_LABELS } from "@/constants/dough";
+import {
+  BIGA_SCHEDULE,
+  POOLISH_SCHEDULE,
+  YEAST_CONVERSION,
+  YEAST_LABELS,
+} from "@/constants/dough";
 import { LeaveningType, MassUnit, TempUnit, WizardInputs } from "@/types";
 
 const LEAVENINGS: LeaveningType[] = [
@@ -49,14 +54,16 @@ const saltStep = (steps: WorkflowStep[]) =>
   steps.find((s) => s.title === "Delayed Salting & Bassinage")!;
 
 describe("workflow shape", () => {
-  it("gives every method six steps ending in Pizza Time", () => {
+  it("ends every method in Pizza Time, with a build step costing one extra card", () => {
     for (const leavening of LEAVENINGS) {
       for (const coldFerment of [false, true]) {
         for (const massUnit of MASS_UNITS) {
           for (const tempUnit of TEMP_UNITS) {
             const steps = flow({ leavening, coldFerment }, massUnit, tempUnit);
             const where = `${leavening} cold=${coldFerment} ${massUnit} ${tempUnit}`;
-            expect(steps, where).toHaveLength(6);
+            // Six shared stages, plus a build step for the methods that have one.
+            const expected = PREFERMENTS.includes(leavening) ? 7 : 6;
+            expect(steps, where).toHaveLength(expected);
             expect(steps.at(-1)!.title, where).toBe("Pizza Time");
             for (const s of steps) {
               expect(s.title.length, where).toBeGreaterThan(0);
@@ -91,18 +98,16 @@ describe("workflow shape", () => {
     }
   });
 
-  it("gives a bulk rise only to the methods without a build step", () => {
-    for (const leavening of STRAIGHTS) {
+  it("gives every method a bulk rise of its own", () => {
+    // A preferment used to have no bulk stage, because its maturation had eaten
+    // the ambient budget. It now matures ahead of mixing day, so the final dough
+    // gets the same bulk rise every other method does.
+    for (const leavening of LEAVENINGS) {
+      const steps = flow({ leavening });
       expect(
-        flow({ leavening }).some((s) => s.title === "Bulk Rise"),
+        steps.map((step) => step.title),
         leavening
-      ).toBe(true);
-    }
-    for (const leavening of PREFERMENTS) {
-      expect(
-        flow({ leavening }).some((s) => s.title === "Bulk Rise"),
-        leavening
-      ).toBe(false);
+      ).toContain("Bulk Rise");
     }
   });
 
@@ -237,12 +242,11 @@ describe("cold fermentation", () => {
     for (const leavening of LEAVENINGS) {
       const i = inputs({ leavening, coldFerment: false });
       const steps = flow({ leavening, coldFerment: false });
-      // A poolish build ends by chilling the preferment itself, which happens
-      // whether or not the dough gets a cold stage, so only the dough steps
-      // are held to this.
+      // A poolish matures in the fridge on its own schedule, whether or not the
+      // dough gets a cold stage, so only the dough steps are held to this.
       const dough = steps.filter((s) => !s.title.startsWith("Build"));
       expect(text(dough), leavening).not.toMatch(/fridge|refrigerat/i);
-      expect(text(steps), leavening).not.toContain(formatTemp(i.coldTempC, "C"));
+      expect(text(dough), leavening).not.toContain(formatTemp(i.coldTempC, "C"));
     }
   });
 
@@ -251,14 +255,8 @@ describe("cold fermentation", () => {
       const i = inputs({ leavening });
       const s = buildSchedule(i);
       const t = text(flow({ leavening }));
-      // A preferment has no bulk step, so its bulk time is proofed with the balls.
-      const proof = PREFERMENTS.includes(leavening)
-        ? s.bulkHours + s.ballRestHours
-        : s.ballRestHours;
-      expect(t, leavening).toContain(formatHours(proof));
-      if (!PREFERMENTS.includes(leavening)) {
-        expect(t, leavening).toContain(formatHours(s.bulkHours));
-      }
+      expect(t, leavening).toContain(formatHours(s.bulkHours));
+      expect(t, leavening).toContain(formatHours(s.ballRestHours));
     }
   });
 
@@ -272,6 +270,46 @@ describe("cold fermentation", () => {
     const bulk = steps.find((s) => s.title === "Bulk Rise")!;
     expect(bulk.detail).toContain("no ambient time budgeted");
     expect(bulk.detail).not.toContain("0m");
+  });
+});
+
+describe("preferment timing", () => {
+  it("gives both preferment builds a concrete duration, not a doneness cue alone", () => {
+    for (const leavening of ["poolish", "biga"] as LeaveningType[]) {
+      const build = flow({ leavening })[0];
+      expect(build.title, leavening).toMatch(/Ahead/);
+      // The bug: "until bubbly, domed, and active" with no number anywhere.
+      expect(build.detail, leavening).toMatch(/\d+(\u2013\d+)?\s*hours?/);
+    }
+  });
+
+  it("spells out both of the poolish's stages", () => {
+    const detail = flow({ leavening: "poolish" })[0].detail;
+    expect(detail).toContain(formatHours(POOLISH_SCHEDULE.kickstartHours));
+    expect(detail).toContain("kickstart");
+    expect(detail).toContain(formatTemp(POOLISH_SCHEDULE.coldTempC, "C"));
+    expect(detail).toContain(
+      `${POOLISH_SCHEDULE.coldRangeH[0]}\u2013${POOLISH_SCHEDULE.coldRangeH[1]} hours`
+    );
+  });
+
+  it("matures the biga in its cellar band, not at the kitchen temperature", () => {
+    const detail = flow({ leavening: "biga", roomTempC: 30 })[0].detail;
+    expect(detail).toContain(
+      `${BIGA_SCHEDULE.tempRangeC[0]}-${BIGA_SCHEDULE.tempRangeC[1]}\u00b0C`
+    );
+    expect(detail).toContain(
+      `${BIGA_SCHEDULE.rangeH[0]}\u2013${BIGA_SCHEDULE.rangeH[1]} hours`
+    );
+    expect(detail).not.toContain("30\u00b0C");
+  });
+
+  it("states a lead time that does not move with the ambient slider", () => {
+    for (const leavening of ["poolish", "biga"] as LeaveningType[]) {
+      const short = flow({ leavening, fermentationHours: 2 })[0].title;
+      const long = flow({ leavening, fermentationHours: 24 })[0].title;
+      expect(short, leavening).toBe(long);
+    }
   });
 });
 

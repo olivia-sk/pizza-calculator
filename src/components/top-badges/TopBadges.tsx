@@ -41,8 +41,15 @@ export function TopBadges({ recipe, settings, yeastOverride }: TopBadgesProps) {
             key={b.label}
             className="flex items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white"
           >
+            {/*
+              Set at the text's own size, not a step above it. An emoji fills its
+              whole em box while the letters beside it only reach from cap height
+              to baseline, so an emoji even 2px larger visibly overhangs the line
+              on both sides and reads as misaligned — the optical centres agree
+              either way, it is the extra height that shows.
+            */}
             {icon && (
-              <span aria-hidden className="text-sm leading-none">
+              <span aria-hidden className="text-xs leading-none">
                 {icon}
               </span>
             )}

@@ -156,11 +156,53 @@ export const SALT_FACTOR_BOUNDS = { min: 0.7, max: 1.5 } as const;
  */
 export const COLD_DECAY_K = { commercial: 0.08, sourdough: 0.12 } as const;
 
+/**
+ * Decay constant for the *protease* clock, the second of the two kinetics used
+ * here. Flour proteases run at a Q10 of roughly 1.65 (e^(0.05*10) = 1.65),
+ * markedly flatter than yeast's ~2.2, which is the whole reason a long cold
+ * cold ferment is not made safe by cutting the dose: chilling slows the gas down more
+ * than it slows the enzymes chewing through the gluten, so every fridge hour
+ * costs relatively more structure than it buys time.
+ */
+export const PROTEOLYSIS_K = 0.05;
+
+/**
+ * How many proteolytic-equivalent hours at 21 C the flour this app assumes
+ * (W280-W320, 12-13% protein 00 flour) will tolerate before the dough matrix
+ * slackens and then collapses.
+ *
+ * Calibrated against documented practice rather than theory, because the
+ * published consensus is more forgiving than a naive reading of enzyme kinetics
+ * suggests: 48 h at 4 C is a standard schedule, 72 h at 3-4 C is widely called
+ * optimal, and gluten breakdown is reported to set in around 72-96 h. So the
+ * caution tier sits above a 72 h cold ferment and below a 96 h one:
+ *
+ *   4 h +  24 h @  4 C ->  14 h  quiet    (classic Neapolitan)
+ *   3 h +  48 h @  4 C ->  24 h  quiet    (standard; must never warn)
+ *   2 h +  72 h @  4 C ->  33 h  quiet    (widely recommended as the sweet spot)
+ *   2 h +  96 h @  4 C ->  43 h  caution  (outer edge of the published range)
+ *   3 h +  96 h @ 10 C ->  58 h  severe   (four days in a warm fridge)
+ */
+export const PROTEOLYTIC_TOLERANCE_H = { caution: 36, severe: 48 } as const;
+
+/**
+ * Where a yeast dose stops being weighable. A 0.1 g kitchen scale reads to
+ * +/-0.03-0.05 g in practice, so 0.5 g already carries ~10% error and anything
+ * under 0.2 g is mostly noise. Thresholded in grams rather than percent because
+ * the grams are what scales with batch size, and what goes on the scale.
+ */
+export const MIN_WEIGHABLE_YEAST_G = { note: 0.5, warn: 0.2 } as const;
+
+/**
+ * With a fridge stage in the schedule, the ambient time is handling - a short
+ * rest before the chill plus the temper afterwards - not a rise. Much past this
+ * and the dough has done its fermenting on the counter, which is the opposite of
+ * what a cold ferment is for.
+ */
+export const MAX_AMBIENT_WITH_COLD_H = 6;
+
 /** Hydration above this needs strong flour and a careful hand. */
 export const HIGH_HYDRATION_PERCENT = 70;
-
-/** Cold ferments past this risk gluten breakdown on a weak flour. */
-export const LONG_COLD_HOURS = 72;
 
 /** The pre-fridge bulk rest takes a quarter of the ambient time, capped at 2 h. */
 export const PRE_FRIDGE_BULK_CAP_H = 2;
@@ -215,12 +257,20 @@ export const STARTER_MODEL = {
 } as const;
 
 /**
- * A poolish is not ready until the yeast has built a stable, domed foam. Under
- * 6 h it is still sweet batter, and under 8 h of total ambient time there is no
- * room left for the final dough to rise after the preferment matures.
+ * The poolish's own maturation window, which the baker runs *ahead of* mixing
+ * day. It is declared here rather than carved out of the main dough's ambient
+ * budget, because the two never compete for the same hours: a short ambient
+ * kickstart wakes the yeast, then a long cold stage builds flavour and acidity
+ * without letting the fluid batter run away. The 16-24 h band is the range a
+ * baker can actually hit around a working day; the dose is solved for the middle
+ * of it, so either end still lands on a ripe preferment.
  */
-export const MIN_POOLISH_HOURS = 6;
-export const MIN_POOLISH_AMBIENT_HOURS = 8;
+export const POOLISH_SCHEDULE = {
+  kickstartHours: 1,
+  coldHours: 20,
+  coldRangeH: [16, 24],
+  coldTempC: 4,
+} as const;
 
 /** Share of total flour that goes into the poolish (Vito Iacopelli style). */
 export const POOLISH_FLOUR_FRACTION = 0.3;
@@ -249,13 +299,18 @@ export const BIGA_MODEL = {
 } as const;
 
 /**
- * A biga is not ready until the stiff dough has visibly domed and started to
- * collapse at the center. Under 12 h it has not developed the acidity and
- * strength that define the style, and under 16 h of total ambient time there
- * is no room left for the final dough to rise after the preferment matures.
+ * The biga's own maturation window, run ahead of mixing day like the poolish.
+ * A biga matures in a cellar band rather than a kitchen: at 16-18 C the stiff
+ * dough domes and just begins to collapse at the center over 16-18 h, which is
+ * the classic overnight schedule. The dose is solved at this temperature, not at
+ * the kitchen's, so the instruction and the arithmetic agree.
  */
-export const MIN_BIGA_HOURS = 12;
-export const MIN_BIGA_AMBIENT_HOURS = 16;
+export const BIGA_SCHEDULE = {
+  hours: 17,
+  rangeH: [16, 18],
+  tempC: 17,
+  tempRangeC: [16, 18],
+} as const;
 
 /** Share of total flour that goes into the biga. */
 export const BIGA_FLOUR_FRACTION = 0.5;

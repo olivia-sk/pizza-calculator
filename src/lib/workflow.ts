@@ -1,11 +1,16 @@
-import { YEAST_CONVERSION, YEAST_LABELS } from "@/constants/dough";
+import {
+  BIGA_SCHEDULE,
+  POOLISH_SCHEDULE,
+  YEAST_CONVERSION,
+  YEAST_LABELS,
+} from "@/constants/dough";
 import {
   buildSchedule,
-  celsiusToF,
   formatHours,
   formatMass,
   formatTemp,
   roundTo,
+  tempRange,
 } from "./calculations";
 import {
   LeaveningType,
@@ -91,12 +96,6 @@ interface Ctx {
   yeast: PrefermentYeastChoice;
 }
 
-/** A temperature band, in the reader's own unit. */
-function tempRange(loC: number, hiC: number, unit: TempUnit): string {
-  const conv = (t: number) => Math.round(unit === "F" ? celsiusToF(t) : t);
-  return `${conv(loC)}-${conv(hiC)}${unit === "F" ? "°F" : "°C"}`;
-}
-
 /** Oil and sugar go in with the salt, and are skipped when the style has none. */
 function extrasClause(c: Ctx): string {
   const extras: string[] = [];
@@ -123,14 +122,32 @@ function yeastPrep(c: Ctx, water: string, honey: string | null): string {
   }
 }
 
+/**
+ * An hour-range in whole hours, for a window the baker has latitude inside.
+ * Printed from the declared schedule rather than hardcoded, so the copy and the
+ * dose can never describe different windows.
+ */
+function hourRange([lo, hi]: readonly [number, number]): string {
+  return `${lo}\u2013${hi} hours`;
+}
+
 function poolishBuild(c: Ctx): WorkflowStep | null {
   const p = c.recipe.poolish;
   if (!p) return null;
   return {
-    title: "Build the Poolish (24h Ahead)",
+    title: `Build the Poolish (${c.hrs(c.schedule.prefermentLeadHours)} Ahead)`,
     detail: `${yeastPrep(c, c.mass(p.water), c.mass(p.honey))}. Stir in ${c.mass(
       p.flour
-    )} flour until no dry spots remain. Cover and let ferment at room temperature until bubbly, domed, and active, then refrigerate.`,
+    )} flour until no dry spots remain, to a loose, pancake-batter consistency. Cover and ferment at ${
+      c.roomTemp
+    } for ${c.hrs(
+      POOLISH_SCHEDULE.kickstartHours
+    )} to kickstart yeast activity, then refrigerate at ${formatTemp(
+      POOLISH_SCHEDULE.coldTempC,
+      c.tempUnit
+    )} for ${hourRange(
+      POOLISH_SCHEDULE.coldRangeH
+    )}, until doubled, domed, and showing dimples across the surface.`,
   };
 }
 
@@ -139,16 +156,16 @@ function bigaBuild(c: Ctx): WorkflowStep | null {
   if (!b) return null;
   // A biga carries no honey, so the sweetener clause is dropped entirely.
   return {
-    title: "Build the Biga",
+    title: `Build the Biga (${c.hrs(c.schedule.prefermentLeadHours)} Ahead)`,
     detail: `${yeastPrep(c, c.mass(b.water), null)}, then work in ${c.mass(
       b.flour
-    )} flour until it comes together as a stiff, shaggy mass; do not knead smooth. Cover and ferment at a cool ${tempRange(
-      16,
-      18,
+    )} flour until it comes together as a stiff, shaggy mass; do not knead smooth. Cover and ferment at ${tempRange(
+      BIGA_SCHEDULE.tempRangeC[0],
+      BIGA_SCHEDULE.tempRangeC[1],
       c.tempUnit
-    )} for ${c.hrs(
-      c.schedule.bigaHours
-    )}, until domed and just beginning to collapse at the center.`,
+    )} \u2014 or at room temperature if your kitchen runs cool \u2014 for ${hourRange(
+      BIGA_SCHEDULE.rangeH
+    )}, until aromatic, aerated, and just beginning to collapse at the center.`,
   };
 }
 
@@ -187,9 +204,9 @@ const FOLDS: WorkflowStep = {
 };
 
 /**
- * Only the straight doughs get a bulk stage of their own. A preferment method
- * spends its long fermentation in the build step, and what ambient time is left
- * is proofed with the balls.
+ * Every method gets a bulk stage of its own. A preferment matures on its own
+ * schedule ahead of mixing day, so it no longer borrows from the final dough's
+ * ambient budget and no longer needs its bulk time folded into the final proof.
  */
 function bulkRise(c: Ctx): WorkflowStep {
   const { bulkHours } = c.schedule;
@@ -215,11 +232,8 @@ function bulkRise(c: Ctx): WorkflowStep {
 /**
  * The dough is always divided and balled before it goes cold, so the fridge is
  * named here rather than in the bulk stage.
- *
- * `absorbBulk` is set for the preferment methods, which have no Bulk Rise step:
- * their ambient bulk time is proofed here so no scheduled hour goes unprinted.
  */
-function divideBallProof(c: Ctx, absorbBulk: boolean): WorkflowStep {
+function divideBallProof(c: Ctx): WorkflowStep {
   const s = c.schedule;
   const single = c.count <= 1;
   const lead = single
@@ -233,14 +247,9 @@ function divideBallProof(c: Ctx, absorbBulk: boolean): WorkflowStep {
 
   let tail: string;
   if (!c.inputs.coldFerment) {
-    const proof = absorbBulk ? s.bulkHours + s.ballRestHours : s.ballRestHours;
-    tail = ` Proof at ${c.roomTemp} for ${c.hrs(proof)} until doubled.`;
+    tail = ` Proof at ${c.roomTemp} for ${c.hrs(s.ballRestHours)} until doubled.`;
   } else {
-    const chill =
-      absorbBulk && s.bulkHours >= MIN_PRINTABLE_HOURS
-        ? `Rest at ${c.roomTemp} for ${c.hrs(s.bulkHours)}, then refrigerate`
-        : "Refrigerate";
-    tail = ` ${chill} at ${c.coldTemp} for ${c.hrs(
+    tail = ` Refrigerate at ${c.coldTemp} for ${c.hrs(
       s.coldHours
     )}. Pull ${them} out ${c.hrs(
       s.temperHours
@@ -322,11 +331,10 @@ const PLANS: Record<LeaveningType, MethodPlan> = {
 /**
  * The Step 3 workflow, as an ordered list of cards.
  *
- * Every method produces the same shape: five technique steps, then "Pizza
- * Time". A method with a preferment spends step 1 building it and folds its
- * bulk time into the final proof; a straight dough spends step 1 on the initial
- * mix and gets a bulk rise of its own. Between those two ends every stage is
- * shared, so the copy cannot drift apart method to method.
+ * Every method shares one stage sequence: mix, salt, fold, bulk rise, divide and
+ * proof, then "Pizza Time". A method with a preferment prepends a build step for
+ * it, which runs ahead of mixing day on its own declared window, so a preferment
+ * flow is the straight flow plus one card rather than a rearrangement of it.
  *
  * Pure: it quotes the `recipe` it is handed rather than recomputing one, which
  * is what guarantees the workflow and the ingredient list always agree.
@@ -377,8 +385,8 @@ export function buildWorkflow(
   steps.push({ title: plan.mixTitle, detail: plan.mixDetail(c) });
   steps.push(salting(c));
   steps.push({ ...FOLDS });
-  if (!build) steps.push(bulkRise(c));
-  steps.push(divideBallProof(c, build !== null));
+  steps.push(bulkRise(c));
+  steps.push(divideBallProof(c));
   steps.push(pizzaTime(c));
   return steps;
 }

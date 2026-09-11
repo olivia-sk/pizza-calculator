@@ -5,16 +5,12 @@ import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
-import {
-  LONG_COLD_HOURS,
-  MIN_BIGA_HOURS,
-  MIN_POOLISH_AMBIENT_HOURS,
-} from "@/constants/dough";
+import { BIGA_SCHEDULE, POOLISH_SCHEDULE } from "@/constants/dough";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
+  buildSchedule,
   calculateRecipe,
   celsiusToF,
-  effectiveFermentationHours,
   fahrenheitToC,
   formatHours,
   formatMass,
@@ -28,6 +24,7 @@ export function StepTwo() {
   const back = useWizardStore((s) => s.back);
 
   const recipe = calculateRecipe(inputs);
+  const schedule = buildSchedule(inputs);
   const tempUnit = settings.tempUnit;
   const isF = tempUnit === "F";
 
@@ -41,18 +38,16 @@ export function StepTwo() {
   const coldMin = toDisplay(LIMITS.coldTempC.min);
   const coldMax = toDisplay(LIMITS.coldTempC.max);
 
-  const effHours = effectiveFermentationHours(inputs);
+  const isPoolish = inputs.leavening === "poolish";
+  const isBiga = inputs.leavening === "biga";
+  const hasPreferment = isPoolish || isBiga;
 
-  // Shown once, as the banner under the slider — filtered back out of
-  // recipe.warnings below so the dose preview doesn't repeat it.
-  const showPoolishWarning =
-    inputs.leavening === "poolish" &&
-    inputs.fermentationHours < MIN_POOLISH_AMBIENT_HOURS;
-  const showBigaWarning =
-    inputs.leavening === "biga" && inputs.fermentationHours < MIN_BIGA_HOURS;
-  const doseWarnings = recipe.warnings.filter(
-    (w) => !w.startsWith("Poolish preferments") && !w.startsWith("Biga preferments")
-  );
+  // Warnings carry their own id and tone, so they are rendered wherever they
+  // belong without matching on their wording. The two about the ambient budget
+  // sit under the slider that causes them; everything else goes with the dose.
+  const ambientIds = new Set(["temper-short", "ambient-long-with-cold"]);
+  const ambientWarnings = recipe.warnings.filter((w) => ambientIds.has(w.id));
+  const doseWarnings = recipe.warnings.filter((w) => !ambientIds.has(w.id));
 
   return (
     <div className="step-transition mx-auto flex w-full max-w-xl flex-1 flex-col gap-6 px-4 pb-28 safe-top">
@@ -74,50 +69,105 @@ export function StepTwo() {
 
       <TopBadges recipe={recipe} settings={settings} />
 
-      <section className="rounded-2xl border border-border bg-surface px-4 py-5">
-        <SliderControl
-          label="Room Temperature Fermentation"
-          value={inputs.fermentationHours}
-          min={LIMITS.fermentationHours.min}
-          max={LIMITS.fermentationHours.max}
-          step={0.25}
-          onChange={(v) => updateInputs({ fermentationHours: v })}
-          formatValue={formatHours}
-        />
-        {inputs.coldFerment && (
+      {/*
+        The preferment runs on its own declared window, ahead of mixing day, so it
+        is shown as a read-only summary rather than folded into the slider below.
+        Stating it here is what makes the separation visible: the baker can see
+        that shortening the main dough's ambient time does not shorten this.
+      */}
+      {hasPreferment && (
+        <section className="rounded-2xl border border-border bg-surface px-4 py-5">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+            {isPoolish ? "Poolish" : "Biga"} schedule
+          </h2>
+          <dl className="mt-3 space-y-2 text-sm">
+            {isPoolish ? (
+              <>
+                <ScheduleRow
+                  label={`Kickstart at ${formatTemp(inputs.roomTempC, tempUnit)}`}
+                  value={formatHours(POOLISH_SCHEDULE.kickstartHours)}
+                />
+                <ScheduleRow
+                  label={`Mature at ${formatTemp(POOLISH_SCHEDULE.coldTempC, tempUnit)}`}
+                  value={`${POOLISH_SCHEDULE.coldRangeH[0]}–${POOLISH_SCHEDULE.coldRangeH[1]}h`}
+                />
+              </>
+            ) : (
+              <ScheduleRow
+                label={`Mature at ${formatTemp(
+                  BIGA_SCHEDULE.tempRangeC[0],
+                  tempUnit
+                )}–${formatTemp(BIGA_SCHEDULE.tempRangeC[1], tempUnit)}`}
+                value={`${BIGA_SCHEDULE.rangeH[0]}–${BIGA_SCHEDULE.rangeH[1]}h`}
+              />
+            )}
+          </dl>
           <p className="mt-3 text-xs text-text-muted">
-            Total ambient time: the pre-fridge bulk rest plus the post-fridge
-            temper and ball proof. The fridge stage below is on top of this.
+            Built roughly {formatHours(schedule.prefermentLeadHours)} before you mix,
+            on its own schedule. The slider below controls the final dough only, so
+            it never shortens this window.
           </p>
-        )}
-        {showPoolishWarning && (
-          <InfoBadge tone="warn">
-            Poolish preferments require at least 6&ndash;8 hours at room
-            temperature to mature and develop flavor.
-          </InfoBadge>
-        )}
-        {showBigaWarning && (
-          <InfoBadge tone="warn">
-            Biga preferments require at least 12&ndash;16 hours, ideally at a
-            cool 16&ndash;18°C, to mature and develop strength.
-          </InfoBadge>
-        )}
-      </section>
+        </section>
+      )}
 
+      {/*
+        The counter stage, built to the same shape as the fridge stage below: a
+        named heading, then that stage's duration and its temperature together.
+        The two used to sit in separate cards, which made the room-temperature
+        pair read as two unrelated settings while the fridge's pair read as one.
+      */}
       <section className="rounded-2xl border border-border bg-surface px-4 py-5">
-        <SliderControl
-          label="Room Temperature"
-          value={toDisplay(inputs.roomTempC)}
-          min={roomMin}
-          max={roomMax}
-          step={1}
-          onChange={(v) => updateInputs({ roomTempC: fromDisplay(v) })}
-          formatValue={(v) => `${Math.round(v)}°${tempUnit}`}
-        />
-        <p className="mt-3 text-xs text-text-muted">
-          Time and temperature both set the yeast dose: longer or warmer needs
-          less yeast. Your fermentation time stays exactly where you put it.
-        </p>
+        <div className="py-3">
+          <h2 className="text-sm font-medium text-text">Room ferment</h2>
+          <p className="text-xs text-text-muted">
+            How long the final dough spends on the counter, and how warm the room
+            is
+          </p>
+        </div>
+        <div className="mt-4 space-y-5 border-t border-border pt-4">
+          <div>
+            {/*
+              Named for the stage and the quantity, matching "Cold Ferment
+              Duration". The old "Main Dough, Room Temperature" named a
+              temperature, so it read as a second, contradictory temperature
+              slider sitting above the real one.
+            */}
+            <SliderControl
+              label="Room Ferment Duration"
+              value={inputs.fermentationHours}
+              min={LIMITS.fermentationHours.min}
+              max={LIMITS.fermentationHours.max}
+              step={0.25}
+              onChange={(v) => updateInputs({ fermentationHours: v })}
+              formatValue={formatHours}
+            />
+            <p className="mt-3 text-xs text-text-muted">
+              {inputs.coldFerment
+                ? "The pre-fridge bulk rest plus the post-fridge temper and ball proof. The fridge stage below is on top of this. With a cold ferment, 1–3 hours is usually all you want."
+                : "The whole time on the counter, from the end of mixing to the oven."}
+            </p>
+            {ambientWarnings.map((w) => (
+              <InfoBadge key={w.id} tone={w.tone === "warn" ? "warn" : "info"}>
+                {w.text}
+              </InfoBadge>
+            ))}
+          </div>
+          <div>
+            <SliderControl
+              label="Room Temperature"
+              value={toDisplay(inputs.roomTempC)}
+              min={roomMin}
+              max={roomMax}
+              step={1}
+              onChange={(v) => updateInputs({ roomTempC: fromDisplay(v) })}
+              formatValue={(v) => `${Math.round(v)}°${tempUnit}`}
+            />
+            <p className="mt-3 text-xs text-text-muted">
+              Longer or warmer needs less yeast. Your fermentation time stays
+              exactly where you put it.
+            </p>
+          </div>
+        </div>
       </section>
 
       <section className="rounded-2xl border border-border bg-surface px-4 py-5">
@@ -150,12 +200,6 @@ export function StepTwo() {
               onChange={(v) => updateInputs({ coldTempC: fromDisplay(v) })}
               formatValue={(v) => `${Math.round(v)}°${tempUnit}`}
             />
-            {inputs.coldHours > LONG_COLD_HOURS && (
-              <InfoBadge tone="warn" className="mt-0">
-                Use a strong flour (W &gt; 300, 12.5%+ protein) for ferments this
-                long, or the gluten will break down.
-              </InfoBadge>
-            )}
           </div>
         )}
       </section>
@@ -165,24 +209,41 @@ export function StepTwo() {
           Dose preview
         </h2>
         <dl className="mt-3 space-y-2 text-sm">
-          <div className="flex items-center justify-between">
-            <dt className="text-text-muted">Effective time at {formatTemp(inputs.roomTempC, tempUnit)}</dt>
-            <dd className="font-bold tabular-nums text-text">{formatHours(effHours)}</dd>
-          </div>
-          <div className="flex items-center justify-between">
-            <dt className="text-text-muted">{recipe.yeastLabel}</dt>
-            <dd className="font-bold tabular-nums text-text">
-              {formatMass(recipe.yeastWeight, settings.massUnit)}
-            </dd>
-          </div>
+          <ScheduleRow
+            label={`Yeast activity at ${formatTemp(inputs.roomTempC, tempUnit)}`}
+            value={formatHours(schedule.effectiveHours)}
+          />
+          {/*
+            The second clock, shown beside the first because the gap between them
+            is the whole point: a long cold stage buys little yeast activity but
+            plenty of enzyme activity, which is what actually limits the schedule.
+          */}
+          <ScheduleRow
+            label="Gluten-degrading activity"
+            value={formatHours(schedule.proteolyticHours)}
+          />
+          <ScheduleRow
+            label={recipe.yeastLabel}
+            value={formatMass(recipe.yeastWeight, settings.massUnit)}
+          />
         </dl>
         {doseWarnings.map((w) => (
-          <p key={w} className="mt-3 rounded-xl bg-surface-sunken p-3 text-xs text-text-muted">
-            {w}
-          </p>
+          <InfoBadge key={w.id} tone={w.tone === "warn" ? "warn" : "info"}>
+            {w.text}
+          </InfoBadge>
         ))}
       </section>
 
+    </div>
+  );
+}
+
+/** One label/value line in a read-only schedule or dose summary. */
+function ScheduleRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-text-muted">{label}</dt>
+      <dd className="font-bold tabular-nums text-text">{value}</dd>
     </div>
   );
 }

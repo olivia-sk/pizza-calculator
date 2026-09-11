@@ -2,18 +2,20 @@ import {
   BIGA_FLOUR_FRACTION,
   BIGA_HYDRATION,
   BIGA_MODEL,
+  BIGA_SCHEDULE,
   COLD_DECAY_K,
   GRAMS_PER_OUNCE,
-  MIN_BIGA_AMBIENT_HOURS,
-  MIN_BIGA_HOURS,
-  MIN_POOLISH_AMBIENT_HOURS,
-  MIN_POOLISH_HOURS,
+  MAX_AMBIENT_WITH_COLD_H,
   MIN_TEMPER_H,
+  MIN_WEIGHABLE_YEAST_G,
   POOLISH_FLOUR_FRACTION,
   POOLISH_HONEY_PERCENT,
   POOLISH_MODEL,
+  POOLISH_SCHEDULE,
   PRE_FRIDGE_BULK_CAP_H,
   PRE_FRIDGE_BULK_FRACTION,
+  PROTEOLYSIS_K,
+  PROTEOLYTIC_TOLERANCE_H,
   SALT_BASELINE,
   SALT_FACTOR_BOUNDS,
   SALT_RETARDATION_SLOPE,
@@ -24,7 +26,14 @@ import {
   YEAST_LABELS,
   YEAST_MODEL,
 } from "@/constants/dough";
-import { PizzaStyle, RecipeResult, Schedule, WizardInputs } from "@/types";
+import {
+  PizzaStyle,
+  RecipeResult,
+  RecipeWarning,
+  Schedule,
+  WizardInputs,
+  WarningId,
+} from "@/types";
 
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -151,29 +160,141 @@ export function suggestedStarterPercent(
   );
 }
 
+/** One leg of a fermentation schedule: a duration held at a temperature. */
+export interface Stage {
+  hours: number;
+  tempC: number;
+}
+
 /**
- * Folds a cold stage into room-temperature-equivalent hours using the same
- * Arrhenius-style factor as the dosing curve:
+ * Folds a multi-stage schedule into equivalent hours at a single reference
+ * temperature, using an Arrhenius-style factor per stage:
  *
- *   t_eff = t_room + t_cold * exp(k * (T_cold - T_room))
+ *   t_eq(Tref) = sum_i  t_i * exp(k * (T_i - Tref))
  *
- * k depends on the culture, because commercial yeast and a sourdough levain do
- * not slow down at the same rate in the fridge. At 4 C in a 21 C kitchen one
- * fridge hour counts as e^(0.08*(4-21)) ~ 0.26 room hours for commercial
- * yeast, but only e^(0.12*(4-21)) ~ 0.13 for a starter. The whole fridge range
- * (1-10 C) sits in the band where wild yeast and LAB fall off faster, so the
- * constant applies across the cold stage rather than piecewise below 10 C,
- * which would only put a kink in the middle of the slider.
+ * `k` selects which clock is being read. The yeast clock uses COLD_DECAY_K
+ * (0.08 commercial, a Q10 of ~2.2; 0.12 for a levain, because wild yeast and LAB
+ * shut down harder in the fridge than S. cerevisiae does). The protease clock
+ * uses the much flatter PROTEOLYSIS_K. At 4 C in a 21 C kitchen one fridge hour
+ * counts as e^(0.08*-17) ~ 0.26 yeast-hours but e^(0.05*-17) ~ 0.43
+ * protease-hours, which is precisely why cutting the dose cannot buy unlimited
+ * time: the gluten keeps degrading on a clock the yeast dose has no say over.
+ *
+ * Continuous in temperature with no piecewise branch, so sweeping the fridge
+ * slider across its whole 1-10 C range produces no kink or flat spot.
+ *
+ * IMPORTANT: fold to a reference temperature and then evaluate `dose` *at that
+ * same reference*. Folding the time and also passing a non-reference temperature
+ * would apply the correction twice, since `dose` carries its own exp(k(Tref-T)).
+ */
+export function equivalentHours(
+  stages: readonly Stage[],
+  refTempC: number,
+  k: number
+): number {
+  return stages.reduce(
+    (sum, stage) =>
+      sum +
+      Math.max(stage.hours, 0) *
+        Math.exp(k * ((Number.isFinite(stage.tempC) ? stage.tempC : refTempC) - refTempC)),
+    0
+  );
+}
+
+/** The yeast clock's decay constant for a given culture. */
+function yeastK(inputs: WizardInputs): number {
+  return inputs.leavening === "sourdough"
+    ? COLD_DECAY_K.sourdough
+    : COLD_DECAY_K.commercial;
+}
+
+/**
+ * The preferment's own maturation stages, or none for a method without one. A
+ * sourdough starter is excluded: the baker brings a ripe culture rather than
+ * building it to a schedule this app sets.
+ */
+function prefermentStages(inputs: WizardInputs): Stage[] {
+  if (inputs.leavening === "poolish") {
+    return [
+      { hours: POOLISH_SCHEDULE.kickstartHours, tempC: inputs.roomTempC },
+      { hours: POOLISH_SCHEDULE.coldHours, tempC: POOLISH_SCHEDULE.coldTempC },
+    ];
+  }
+  if (inputs.leavening === "biga") {
+    return [{ hours: BIGA_SCHEDULE.hours, tempC: BIGA_SCHEDULE.tempC }];
+  }
+  return [];
+}
+
+/** The main dough's own stages: the ambient budget, plus any fridge stage. */
+function mainDoughStages(inputs: WizardInputs): Stage[] {
+  const stages: Stage[] = [
+    { hours: Math.max(inputs.fermentationHours, 0), tempC: inputs.roomTempC },
+  ];
+  if (inputs.coldFerment) {
+    stages.push({
+      hours: Math.max(inputs.coldHours, 0),
+      tempC: inputs.coldTempC,
+    });
+  }
+  return stages;
+}
+
+/**
+ * Room-temperature-equivalent hours for the *main dough*, which is what the
+ * straight-dough yeast dose is solved against. Deliberately excludes any
+ * preferment window: a preferment is inoculated separately, for its own
+ * schedule, so folding its hours in here would double-count them.
  */
 export function effectiveFermentationHours(inputs: WizardInputs): number {
-  const room = Math.max(inputs.fermentationHours, 0);
-  if (!inputs.coldFerment) return room;
-  const k =
-    inputs.leavening === "sourdough"
-      ? COLD_DECAY_K.sourdough
-      : COLD_DECAY_K.commercial;
-  const factor = Math.exp(k * (inputs.coldTempC - inputs.roomTempC));
-  return room + Math.max(inputs.coldHours, 0) * factor;
+  return equivalentHours(
+    mainDoughStages(inputs),
+    inputs.roomTempC,
+    yeastK(inputs)
+  );
+}
+
+/**
+ * Equivalent hours on the protease clock, across *every* stage the flour lives
+ * through: the preferment's maturation, the ambient handling, and the cold stage.
+ * This is the quantity the overfermentation guardrail is thresholded on, and the
+ * only place a preferment dough's fridge stage becomes visible at all, since the
+ * preferment's dose is fixed by its own window.
+ */
+export function proteolyticHours(inputs: WizardInputs): number {
+  const ref = POOLISH_MODEL.refTempC;
+  // Only the preferment's own share of the flour spends the preferment's window
+  // fermenting; the rest is weighed out fresh on mixing day. Counting that window
+  // against the whole batch overstated a poolish dough by the better part of
+  // seven hours and pushed textbook schedules over the tolerance.
+  const prefermentFlour =
+    inputs.leavening === "poolish"
+      ? POOLISH_FLOUR_FRACTION
+      : inputs.leavening === "biga"
+      ? BIGA_FLOUR_FRACTION
+      : 0;
+  const preferment =
+    prefermentFlour *
+    equivalentHours(prefermentStages(inputs), ref, PROTEOLYSIS_K);
+  return (
+    preferment + equivalentHours(mainDoughStages(inputs), ref, PROTEOLYSIS_K)
+  );
+}
+
+/**
+ * The poolish's maturation folded to the dose curve's own reference temperature,
+ * so a 1 h kickstart plus 20 h at 4 C reads as the ~6 room-temperature hours of
+ * yeast activity it actually represents.
+ */
+export function poolishEquivalentHours(roomTempC: number): number {
+  return equivalentHours(
+    [
+      { hours: POOLISH_SCHEDULE.kickstartHours, tempC: roomTempC },
+      { hours: POOLISH_SCHEDULE.coldHours, tempC: POOLISH_SCHEDULE.coldTempC },
+    ],
+    POOLISH_MODEL.refTempC,
+    POOLISH_MODEL.k
+  );
 }
 
 /* -------------------------------------------------------------------------- */
@@ -216,42 +337,40 @@ export function resolveFormula(
 /* -------------------------------------------------------------------------- */
 
 /**
- * Splits the user's room-temperature budget into stages. Every stage is carved
- * out of `fermentationHours`, so the stages always add back up to exactly what
- * the user asked for.
+ * Splits the user's room-temperature budget into stages.
+ *
+ * The whole of `fermentationHours` belongs to the *main dough*: every ambient
+ * stage is carved out of it, so the stages always add back up to exactly what the
+ * user asked for. A preferment's maturation is *not* carved out of it. The
+ * preferment is built a day ahead on its own declared window (POOLISH_SCHEDULE /
+ * BIGA_SCHEDULE), so it never competes with the final dough for the same hours,
+ * and the ambient slider can be set to the 1-3 h of handling a cold-fermented
+ * dough actually wants without starving the preferment.
  */
 export function buildSchedule(inputs: WizardInputs): Schedule {
-  const total = Math.max(inputs.fermentationHours, 0.5);
+  const remaining = Math.max(inputs.fermentationHours, 0.5);
   const isPoolish = inputs.leavening === "poolish";
   const isBiga = inputs.leavening === "biga";
 
-  // The poolish takes roughly half the budget, held to a 6-16 h window, and
-  // always leaves at least 2 h (or a third of the budget) for the final dough.
-  // The 6 h floor wins whenever the budget can afford it, which is from 8 h of
-  // ambient time up. Below that the two stages cannot both be satisfied, so the
-  // cap takes over and calculateRecipe raises MIN_POOLISH_AMBIENT_HOURS as a
-  // warning rather than silently scheduling an immature preferment.
-  const poolishHours = isPoolish
-    ? clamp(
-        clamp(total * 0.5, MIN_POOLISH_HOURS, 16),
-        0,
-        Math.max(total - 2, total / 3)
-      )
-    : 0;
+  const kickstart = isPoolish ? POOLISH_SCHEDULE.kickstartHours : 0;
+  const prefermentCold = isPoolish ? POOLISH_SCHEDULE.coldHours : 0;
+  const poolishHours = isPoolish ? kickstart + prefermentCold : 0;
+  const bigaHours = isBiga ? BIGA_SCHEDULE.hours : 0;
 
-  // A biga is stiffer and slower than a poolish, so it claims more of the
-  // budget (60%) and a wider window (12-18 h), with the same floor-vs-cap
-  // handoff: the 12 h floor wins whenever the budget can afford it, which is
-  // from 16 h of ambient time up.
-  const bigaHours = isBiga
-    ? clamp(
-        clamp(total * 0.6, MIN_BIGA_HOURS, 18),
-        0,
-        Math.max(total - 2, total / 3)
-      )
-    : 0;
+  const preferment = {
+    poolishHours,
+    bigaHours,
+    prefermentKickstartHours: kickstart,
+    prefermentColdHours: prefermentCold,
+    prefermentColdTempC: isPoolish ? POOLISH_SCHEDULE.coldTempC : 0,
+    prefermentLeadHours: poolishHours + bigaHours,
+  };
 
-  const remaining = Math.max(total - poolishHours - bigaHours, 0);
+  const clocks = {
+    effectiveHours: effectiveFermentationHours(inputs),
+    proteolyticHours: proteolyticHours(inputs),
+  };
+
   const coldHours = inputs.coldFerment ? Math.max(inputs.coldHours, 0) : 0;
 
   if (inputs.coldFerment) {
@@ -270,31 +389,46 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
       remaining
     );
     return {
-      poolishHours,
-      bigaHours,
+      ...preferment,
       bulkHours: remaining - temperHours,
       ballRestHours: 0,
       temperHours,
       coldHours,
-      effectiveHours: effectiveFermentationHours(inputs),
+      ...clocks,
     };
   }
 
   const bulkHours = remaining * 0.6;
   return {
-    poolishHours,
-    bigaHours,
+    ...preferment,
     bulkHours,
     ballRestHours: remaining - bulkHours,
     temperHours: 0,
     coldHours: 0,
-    effectiveHours: effectiveFermentationHours(inputs),
+    ...clocks,
   };
 }
 
 /* -------------------------------------------------------------------------- */
 /* Recipe                                                                      */
 /* -------------------------------------------------------------------------- */
+
+/**
+ * Collects guardrails in the order they are raised. Keyed by id, so the same
+ * warning cannot be pushed twice and the UI can decide where each one belongs
+ * without matching on its wording.
+ */
+function warningCollector() {
+  const byId = new Map<WarningId, RecipeWarning>();
+  return {
+    add(id: WarningId, tone: RecipeWarning["tone"], text: string) {
+      if (!byId.has(id)) byId.set(id, { id, tone, text });
+    },
+    list(): RecipeWarning[] {
+      return [...byId.values()];
+    },
+  };
+}
 
 /**
  * Baker's math, with total flour (including any preferment or starter flour)
@@ -308,7 +442,7 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
  * F*H, and are subtracted back out of the flour and water you weigh.
  */
 export function calculateRecipe(inputs: WizardInputs): RecipeResult {
-  const warnings: string[] = [];
+  const warnings = warningCollector();
 
   const count = Math.max(Math.floor(inputs.pizzaCount) || 0, 0);
   const ballWeight = Math.max(inputs.doughballWeight, 0);
@@ -337,24 +471,31 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     yeastDosePercent = yeastPercent;
     const starterFlourPercent = yeastPercent / (1 + STARTER_HYDRATION);
     if (H * 100 < starterFlourPercent) {
-      warnings.push(
+      warnings.add(
+        "starter-water",
+        "warn",
         "Hydration is lower than the water carried in by the starter. Raise hydration or lower the starter percentage."
       );
     }
   } else if (isPoolish) {
-    // Dosed against the poolish flour, for the poolish's own fermentation
-    // window, not against total flour for the whole bulk.
+    // Dosed against the poolish flour, for the poolish's *own* declared window,
+    // not against total flour for the whole bulk and not against the ambient
+    // slider. The window spans two temperatures, so it is folded to the dose
+    // curve's reference temperature first and evaluated there, which keeps the
+    // temperature correction from being applied twice.
     yeastDosePercent = calcPoolishIdyPercent(
-      schedule.poolishHours,
-      inputs.roomTempC
+      poolishEquivalentHours(inputs.roomTempC),
+      POOLISH_MODEL.refTempC
     );
     yeastDoseBasis = "poolish flour";
     yeastPercent = yeastDosePercent * POOLISH_FLOUR_FRACTION;
     honeyPercent = POOLISH_HONEY_PERCENT;
   } else if (isBiga) {
-    // Dosed against the biga flour, for the biga's own fermentation window,
-    // not against total flour for the whole bulk.
-    yeastDosePercent = calcBigaIdyPercent(schedule.bigaHours, inputs.roomTempC);
+    // Dosed against the biga flour, for the biga's own declared window, at the
+    // cellar temperature the workflow actually tells the baker to hold it at.
+    // Dosing this at the kitchen temperature instead would solve for a rate the
+    // biga never sees, and under-ferment it by the ratio between the two.
+    yeastDosePercent = calcBigaIdyPercent(BIGA_SCHEDULE.hours, BIGA_SCHEDULE.tempC);
     yeastDoseBasis = "biga flour";
     yeastPercent = yeastDosePercent * BIGA_FLOUR_FRACTION;
   } else {
@@ -364,7 +505,9 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     // salt correction. Testing after would let a merely salty dough look like
     // an impossibly short ferment.
     if (base >= YEAST_MODEL.maxPercent - 1e-9) {
-      warnings.push(
+      warnings.add(
+        "yeast-capped",
+        "warn",
         "Yeast is capped. That fermentation time is very short for this temperature."
       );
     }
@@ -411,7 +554,9 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       water: Math.max(totalWater - poolishWater, 0),
     };
     if (H < POOLISH_FLOUR_FRACTION) {
-      warnings.push(
+      warnings.add(
+        "poolish-hydration",
+        "warn",
         "Hydration is below the water held in the poolish. Raise hydration above 30%."
       );
     }
@@ -432,7 +577,9 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       water: Math.max(totalWater - bigaWater, 0),
     };
     if (H < BIGA_FLOUR_FRACTION * BIGA_HYDRATION) {
-      warnings.push(
+      warnings.add(
+        "biga-hydration",
+        "warn",
         "Hydration is below the water held in the biga. Raise hydration above 22.5%."
       );
     }
@@ -450,28 +597,63 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       water: Math.max(totalWater - starterWater, 0),
     };
     if (starterFlour > totalFlour) {
-      warnings.push(
+      warnings.add(
+        "starter-flour",
+        "warn",
         "The starter carries more flour than the formula holds. Lower the starter percentage."
       );
     }
   }
 
-  if (isPoolish && inputs.fermentationHours < MIN_POOLISH_AMBIENT_HOURS) {
-    warnings.push(
-      "Poolish preferments require at least 6-8 hours at room temperature to mature and develop flavor."
+  // --- Fermentation guardrails ---------------------------------------------
+  // Thresholded on the protease clock rather than on raw hours, so the warning
+  // responds to ambient time, fridge time and fridge temperature together. This
+  // is also the only place a preferment dough's cold stage is visible, since its dose
+  // is fixed by the preferment's own window and cannot be cut to compensate.
+  const tProt = schedule.proteolyticHours;
+  // The way out depends on which stage is actually long. Telling someone with no
+  // fridge stage to "shorten the fridge stage" is advice they cannot act on.
+  const shorten = inputs.coldFerment
+    ? "shorten the fridge stage"
+    : "shorten the room ferment";
+  if (tProt > PROTEOLYTIC_TOLERANCE_H.severe) {
+    warnings.add(
+      "overferment-severe",
+      "warn",
+      `This schedule works out to ${Math.round(tProt)} hours of gluten-degrading ` +
+        "activity, well past what W280-320 flour tolerates. Expect a slack, sticky " +
+        "dough that tears instead of stretching. Cutting the yeast will not save it: " +
+        `${shorten} or move to a W330+ flour.`
+    );
+  } else if (tProt > PROTEOLYTIC_TOLERANCE_H.caution) {
+    warnings.add(
+      "overferment-caution",
+      "warn",
+      `This schedule works out to ${Math.round(tProt)} hours of gluten-degrading ` +
+        "activity, near the limit for W280-320 flour. The dough will handle softer " +
+        `than usual; ${shorten} or use a stronger flour for margin.`
     );
   }
 
-  if (isBiga && inputs.fermentationHours < MIN_BIGA_AMBIENT_HOURS) {
-    warnings.push(
-      "Biga preferments require at least 12-16 hours, ideally at a cool 16-18°C, to mature and develop strength."
-    );
-  }
-
-  if (inputs.coldFerment && schedule.bulkHours <= 0) {
-    warnings.push(
-      "Not enough ambient time to both bulk and temper. Allow at least 3 hours at room temperature around the fridge stage."
-    );
+  if (inputs.coldFerment) {
+    if (schedule.temperHours < MIN_TEMPER_H) {
+      warnings.add(
+        "temper-short",
+        "warn",
+        `Only ${formatHours(schedule.temperHours)} out of the fridge before baking. ` +
+          "Cold dough is dense and fights the stretch: allow at least " +
+          `${formatHours(MIN_TEMPER_H)} to come back to room temperature.`
+      );
+    }
+    if (inputs.fermentationHours > MAX_AMBIENT_WITH_COLD_H) {
+      warnings.add(
+        "ambient-long-with-cold",
+        "note",
+        `${formatHours(inputs.fermentationHours)} at room temperature alongside a ` +
+          "fridge stage is a rise, not handling. A cold ferment wants a short rest before " +
+          "the chill and a temper after; move the rest of that time into the fridge."
+      );
+    }
   }
 
   // The parts you weigh out must add back up to the dough you asked for. This
@@ -492,13 +674,42 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     totalDoughWeight > 0 &&
     Math.abs(partsTotal - totalDoughWeight) > 1e-6 * totalDoughWeight
   ) {
-    warnings.push(
+    warnings.add(
+      "formula-unbalanced",
+      "warn",
       "This formula does not balance. Check hydration against the water carried in by the starter or poolish."
     );
   }
 
   const r1 = (n: number) => roundTo(n, 1);
   const r2 = (n: number) => roundTo(n, 2);
+
+  // Thresholded on the rounded weight, so the warning always agrees with the
+  // number printed beside it. A sourdough starter is spooned, not micro-weighed,
+  // so it is exempt. Grams, not percent: the grams are what the scale sees, and
+  // what shrinks as the batch does.
+  const shownYeast = r2(yeastWeight);
+  if (!isSourdough && shownYeast > 0) {
+    const label = YEAST_LABELS[inputs.leavening].toLowerCase();
+    if (shownYeast < MIN_WEIGHABLE_YEAST_G.warn) {
+      warnings.add(
+        "microdose-warn",
+        "warn",
+      `${formatMass(shownYeast, "g")} of ${label} is below what a 0.1 g kitchen ` +
+        `scale can read (${formatPercent(yeastPercent)} of flour). Weigh it on a ` +
+        "0.01 g scale, scale the batch up, or stir the dose into 10 parts water and " +
+        "use a tenth of that slurry."
+      );
+    } else if (shownYeast < MIN_WEIGHABLE_YEAST_G.note) {
+      warnings.add(
+        "microdose-note",
+        "note",
+      `${formatMass(shownYeast, "g")} of ${label} is near the floor of a 0.1 g ` +
+        "scale, which reads to about +/-0.04 g. A 0.01 g scale will hold the dose " +
+        "much closer than a kitchen one."
+      );
+    }
+  }
 
   return {
     totalDoughWeight: r1(totalDoughWeight),
@@ -542,7 +753,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       honey: honeyPercent,
       yeast: roundTo(yeastPercent, 3),
     },
-    warnings,
+    warnings: warnings.list(),
   };
 }
 
@@ -593,6 +804,15 @@ export function formatMass(grams: number, unit: "g" | "oz"): string {
 export function formatTemp(celsius: number, unit: "C" | "F"): string {
   if (unit === "F") return `${Math.round(celsiusToF(celsius))}°F`;
   return `${Math.round(celsius)}°C`;
+}
+
+/**
+ * A temperature band in the reader's own unit, with the unit named once at the
+ * end ("16-18°C"), rather than repeated on both ends.
+ */
+export function tempRange(loC: number, hiC: number, unit: "C" | "F"): string {
+  const conv = (t: number) => Math.round(unit === "F" ? celsiusToF(t) : t);
+  return `${conv(loC)}-${conv(hiC)}${unit === "F" ? "°F" : "°C"}`;
 }
 
 export function formatHours(hours: number): string {

@@ -3,6 +3,7 @@
 import { ReactNode, useMemo, useState } from "react";
 import { ChevronLeft, CheckCircle2 } from "lucide-react";
 import { TopBadges } from "@/components/top-badges/TopBadges";
+import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { ingredientIcon } from "@/lib/ingredient-icons";
 import { useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
@@ -101,14 +102,11 @@ export function StepThree() {
       />
 
       {recipe.warnings.length > 0 && (
-        <div className="space-y-2">
+        <div>
           {recipe.warnings.map((w) => (
-            <p
-              key={w}
-              className="rounded-xl bg-surface-sunken p-3 text-xs text-text-muted"
-            >
-              {w}
-            </p>
+            <InfoBadge key={w.id} tone={w.tone === "warn" ? "warn" : "info"}>
+              {w.text}
+            </InfoBadge>
           ))}
         </div>
       )}
@@ -269,8 +267,9 @@ function IngredientRow({
           control && "min-[460px]:w-[8.5rem] min-[460px]:flex-none"
         )}
       >
+        {/* Emoji sized to the row's own text, for the reason given in TopBadges. */}
         {icon && (
-          <span aria-hidden className="text-base leading-none">
+          <span aria-hidden className="text-sm leading-none">
             {icon}
           </span>
         )}

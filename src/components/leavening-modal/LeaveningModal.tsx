@@ -5,7 +5,13 @@ import { Button } from "@/components/button/Button";
 import { OptionCard } from "@/components/option-card/OptionCard";
 import { SliderControl } from "@/components/slider-control/SliderControl";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
-import { effectiveFermentationHours, formatHours } from "@/lib/calculations";
+import { tempRange } from "@/lib/calculations";
+import {
+  BIGA_FLOUR_FRACTION,
+  BIGA_HYDRATION,
+  BIGA_SCHEDULE,
+  POOLISH_FLOUR_FRACTION,
+} from "@/constants/dough";
 import { LeaveningType } from "@/types";
 
 interface LeaveningModalProps {
@@ -25,10 +31,9 @@ const OPTIONS: { id: LeaveningType; title: string; subtitle: string }[] = [
 export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
   const inputs = useWizardStore((s) => s.inputs);
   const advanced = useWizardStore((s) => s.settings.advanced);
+  const tempUnit = useWizardStore((s) => s.settings.tempUnit);
   const updateInputs = useWizardStore((s) => s.updateInputs);
   const resolved = useRecipeInputs();
-
-  const effHours = effectiveFermentationHours(inputs);
 
   return (
     <Modal
@@ -70,9 +75,15 @@ export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-medium text-text">Starter</p>
+                {/*
+                  Says the number is derived, not that it is fixed — in simple
+                  mode it cannot be edited here, so a bare percentage invites
+                  "why this one?". Deliberately does not restate the schedule:
+                  that belongs to Step 2, and quoting it here forward-references
+                  settings the baker has not reached yet.
+                */}
                 <p className="text-xs text-text-muted">
-                  Matched to {formatHours(effHours)} of fermentation at your
-                  room temperature
+                  Matched to your fermentation schedule
                 </p>
               </div>
               <p className="font-display text-lg font-bold text-text tabular-nums">
@@ -89,7 +100,7 @@ export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
 
       {inputs.leavening === "poolish" && (
         <p className="mt-6 rounded-xl bg-accent-50 p-3 text-xs text-accent-700">
-          30% of the total flour and an equal weight of water ferment
+          {POOLISH_FLOUR_FRACTION * 100}% of the total flour and an equal weight of water ferment
           separately as a 100% hydration poolish, with a touch of honey to feed
           early activity. The yeast is dosed against the poolish flour for the
           poolish&apos;s own window, so it stays far smaller than a straight
@@ -99,8 +110,14 @@ export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
 
       {inputs.leavening === "biga" && (
         <p className="mt-6 rounded-xl bg-accent-50 p-3 text-xs text-accent-700">
-          50% of the total flour ferments separately as a stiff, unsalted 45%
-          hydration biga, traditionally at a cool 16-18°C for 12-18 hours. The
+          {BIGA_FLOUR_FRACTION * 100}% of the total flour ferments separately as
+          a stiff, unsalted {BIGA_HYDRATION * 100}% hydration biga, at a cool{" "}
+          {tempRange(
+            BIGA_SCHEDULE.tempRangeC[0],
+            BIGA_SCHEDULE.tempRangeC[1],
+            tempUnit
+          )}{" "}
+          for {BIGA_SCHEDULE.rangeH[0]}&ndash;{BIGA_SCHEDULE.rangeH[1]} hours. The
           yeast is dosed against the biga flour for its own slower window, then
           the biga is broken up and worked into the final dough.
         </p>
