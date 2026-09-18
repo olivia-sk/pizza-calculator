@@ -208,6 +208,20 @@ export const HIGH_HYDRATION_PERCENT = 70;
 export const PRE_FRIDGE_BULK_CAP_H = 2;
 export const PRE_FRIDGE_BULK_FRACTION = 0.25;
 
+/**
+ * A sourdough runs the pre-fridge stage differently. The published cold-retard
+ * pizza schedules bulk for 2-4 h with hourly stretch and folds before the
+ * chill, then temper for 3-6 h after it (Strgar: 3 h + 3-6 h; Leopard Crust:
+ * ~4 h + 3-8 h), so the ambient budget leans further towards the bulk, the cap
+ * allows the full three hours, and the "that is a rise, not handling" note only
+ * fires past the 9 h those schedules actually run.
+ */
+export const SOURDOUGH_COLD_HANDLING = {
+  bulkFraction: 0.4,
+  bulkCapH: 3,
+  maxAmbientH: 9,
+} as const;
+
 /** A doughball needs roughly this long out of the fridge to reach room temp. */
 export const MIN_TEMPER_H = 1.5;
 
@@ -280,6 +294,23 @@ export const POOLISH_HONEY_PERCENT = 0.5;
 
 /** Starter is assumed to be a 100% hydration levain: half flour, half water. */
 export const STARTER_HYDRATION = 1.0;
+
+/**
+ * How a sourdough dough is handled on mixing day, after Rene Strgar's 24-30 h
+ * method: an autolyse before the starter goes in, oil last, a cool mix, and a
+ * round of stretch and folds for each hour of bulk. These shape the workflow
+ * copy only; the doses and the schedule come from the fermentation model.
+ */
+export const SOURDOUGH_METHOD = {
+  doughTempMaxC: 25,
+  autolyseRangeMin: [30, 45],
+  foldIntervalH: 1,
+  /** A fold only earns its place if the dough gets this long to relax after it. */
+  minRestAfterFoldH: 0.5,
+  maxFoldRounds: 2,
+  foldsPerRound: 4,
+  restAfterBakeSec: [30, 60],
+} as const;
 
 /**
  * Preferment dosing curve (biga), as a percentage of the *biga* flour. A biga

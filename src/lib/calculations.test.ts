@@ -11,6 +11,8 @@ import { LIMITS, defaultInputs } from "./store";
 import {
   BIGA_SCHEDULE,
   MAX_AMBIENT_WITH_COLD_H,
+  PRE_FRIDGE_BULK_CAP_H,
+  SOURDOUGH_COLD_HANDLING,
   MIN_TEMPER_H,
   MIN_WEIGHABLE_YEAST_G,
   POOLISH_SCHEDULE,
@@ -591,6 +593,32 @@ describe("under-fermentation guardrails", () => {
     );
     expect(ids(r)).toContain("ambient-long-with-cold");
     expect(r.warnings.find((w) => w.id === "ambient-long-with-cold")!.tone).toBe("note");
+  });
+
+  it("lets a sourdough run the longer pre-fridge bulk its schedules call for", () => {
+    // Strgar: 3 h bulk with two fold rounds, then 3-6 h out of the fridge, so
+    // 6-9 ambient hours around a cold stage is the documented practice, not a
+    // rise that defeats the fridge.
+    const nine = inputs({ leavening: "sourdough", coldFerment: true, fermentationHours: 9 });
+    const s = buildSchedule(nine);
+    expect(s.bulkHours).toBeCloseTo(SOURDOUGH_COLD_HANDLING.bulkCapH, 9);
+    expect(s.temperHours).toBeCloseTo(6, 9);
+    expect(s.bulkHours + s.temperHours).toBeCloseTo(9, 9);
+    for (let hours = 3; hours <= SOURDOUGH_COLD_HANDLING.maxAmbientH; hours += 0.25) {
+      const r = calculateRecipe(inputs({ ...nine, fermentationHours: hours }));
+      expect(ids(r), `${hours}h`).not.toContain("ambient-long-with-cold");
+      expect(ids(r), `${hours}h`).not.toContain("temper-short");
+    }
+    expect(
+      ids(calculateRecipe(inputs({ ...nine, fermentationHours: SOURDOUGH_COLD_HANDLING.maxAmbientH + 1 })))
+    ).toContain("ambient-long-with-cold");
+  });
+
+  it("keeps the short kickstart for every other method", () => {
+    for (const leavening of ["idy", "ady", "fresh", "poolish", "biga"] as LeaveningType[]) {
+      const s = buildSchedule(inputs({ leavening, coldFerment: true, fermentationHours: 9 }));
+      expect(s.bulkHours, leavening).toBeCloseTo(PRE_FRIDGE_BULK_CAP_H, 9);
+    }
   });
 
   it("says nothing about tempering without a fridge stage", () => {

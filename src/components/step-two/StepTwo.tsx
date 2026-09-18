@@ -142,9 +142,11 @@ export function StepTwo() {
               formatValue={formatHours}
             />
             <p className="mt-3 text-xs text-text-muted">
-              {inputs.coldFerment
-                ? "The pre-fridge bulk rest plus the post-fridge temper and ball proof. The fridge stage below is on top of this. With a cold ferment, 1–3 hours is usually all you want."
-                : "The whole time on the counter, from the end of mixing to the oven."}
+              {!inputs.coldFerment
+                ? "The whole time on the counter, from the end of mixing to the oven."
+                : inputs.leavening === "sourdough"
+                ? "The pre-fridge bulk with its stretch and folds, plus the hours out of the fridge before baking. The fridge stage below is on top of this. A sourdough usually wants 6–9 hours here: about 3 to bulk and 3–6 to come back to room temperature."
+                : "The pre-fridge bulk rest plus the post-fridge temper and ball proof. The fridge stage below is on top of this. With a cold ferment, 1–3 hours is usually all you want."}
             </p>
             {ambientWarnings.map((w) => (
               <InfoBadge key={w.id} tone={w.tone === "warn" ? "warn" : "info"}>

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { buildSchedule, calculateRecipe, formatHours, formatMass, formatTemp } from "./calculations";
-import { PrefermentYeast, WorkflowStep, buildWorkflow, splitWater } from "./workflow";
+import { PrefermentYeast, WorkflowStep, buildWorkflow, foldRounds, splitWater } from "./workflow";
 import { LIMITS, defaultInputs } from "./store";
 import {
   BIGA_SCHEDULE,
   POOLISH_SCHEDULE,
+  SOURDOUGH_METHOD,
   YEAST_CONVERSION,
   YEAST_LABELS,
 } from "@/constants/dough";
@@ -46,12 +47,33 @@ function flow(
 const text = (steps: WorkflowStep[]) =>
   steps.map((s) => `${s.title} ${s.detail}`).join("\n");
 
-/** The step that tells you to mix the flour in — step 1 or 2 depending on method. */
+/**
+ * The step that tells you to mix the flour in — step 1 or 2 depending on
+ * method. The sourdough flow opens with an autolyse instead of a mix.
+ */
 const mixStep = (steps: WorkflowStep[]) =>
-  steps.find((s) => s.title.includes("Initial Mix"))!;
+  steps.find(
+    (s) => s.title.includes("Initial Mix") || s.title === "Autolyse"
+  )!;
 
+/** The step the salt and the second pour of water go in on. */
 const saltStep = (steps: WorkflowStep[]) =>
-  steps.find((s) => s.title === "Delayed Salting & Bassinage")!;
+  steps.find(
+    (s) =>
+      s.title === "Delayed Salting & Bassinage" ||
+      s.title === "Add the Starter, Then Salt"
+  )!;
+
+/** How many cards a flow should have, given what it carries. */
+function expectedCards(i: WizardInputs): number {
+  if (i.leavening !== "sourdough") {
+    return PREFERMENTS.includes(i.leavening) ? 7 : 6;
+  }
+  // Starter, autolyse, starter+salt, [oil], bulk, divide, [cold + temper | proof],
+  // stretch, pizza time.
+  const oil = calculateRecipe(i).oil > 0 ? 1 : 0;
+  return (i.coldFerment ? 9 : 8) + oil;
+}
 
 describe("workflow shape", () => {
   it("ends every method in Pizza Time, with a build step costing one extra card", () => {
@@ -61,8 +83,9 @@ describe("workflow shape", () => {
           for (const tempUnit of TEMP_UNITS) {
             const steps = flow({ leavening, coldFerment }, massUnit, tempUnit);
             const where = `${leavening} cold=${coldFerment} ${massUnit} ${tempUnit}`;
-            // Six shared stages, plus a build step for the methods that have one.
-            const expected = PREFERMENTS.includes(leavening) ? 7 : 6;
+            // Six shared stages, plus a build step for the methods that have
+            // one; the sourdough flow has its own, longer sequence.
+            const expected = expectedCards(inputs({ leavening, coldFerment }));
             expect(steps, where).toHaveLength(expected);
             expect(steps.at(-1)!.title, where).toBe("Pizza Time");
             for (const s of steps) {
@@ -105,9 +128,9 @@ describe("workflow shape", () => {
     for (const leavening of LEAVENINGS) {
       const steps = flow({ leavening });
       expect(
-        steps.map((step) => step.title),
+        steps.some((step) => step.title.startsWith("Bulk")),
         leavening
-      ).toContain("Bulk Rise");
+      ).toBe(true);
     }
   });
 
@@ -396,6 +419,102 @@ describe("preferment yeast type", () => {
       expect(flow({ leavening }), leavening).toEqual(
         flow({ leavening }, "g", "C", choice(leavening, "idy"))
       );
+    }
+  });
+});
+
+describe("sourdough method", () => {
+  const titles = (o: Partial<WizardInputs> = {}) =>
+    flow({ leavening: "sourdough", ...o }).map((s) => s.title);
+
+  it("runs autolyse, starter, bulk with folds, divide, stretch, then Pizza Time", () => {
+    expect(titles({ coldFerment: true })).toEqual([
+      "Ready the Starter",
+      "Autolyse",
+      "Add the Starter, Then Salt",
+      "Bulk & Stretch-and-Folds",
+      "Divide & Ball",
+      "Cold Ferment",
+      "Bring to Room Temperature",
+      "Stretch",
+      "Pizza Time",
+    ]);
+    expect(titles({ coldFerment: false })).toEqual([
+      "Ready the Starter",
+      "Autolyse",
+      "Add the Starter, Then Salt",
+      "Bulk & Stretch-and-Folds",
+      "Divide & Ball",
+      "Final Proof",
+      "Stretch",
+      "Pizza Time",
+    ]);
+  });
+
+  it("adds an oil card only when the dough carries oil", () => {
+    const oily = { style: "newyork", oilPercent: 2.5 } as const;
+    const r = calculateRecipe(inputs({ leavening: "sourdough", ...oily }));
+    const steps = flow({ leavening: "sourdough", ...oily });
+    const oil = steps.find((s) => s.title === "Add the Olive Oil")!;
+    expect(oil).toBeDefined();
+    expect(steps.indexOf(oil)).toBe(3);
+    expect(oil.detail).toContain(`${formatMass(r.oil, "g")} olive oil`);
+    expect(titles({ style: "neapolitan", oilPercent: 0 })).not.toContain(
+      "Add the Olive Oil"
+    );
+  });
+
+  it("keeps the mix-temperature note exactly once, wherever the oil goes", () => {
+    const limit = formatTemp(SOURDOUGH_METHOD.doughTempMaxC, "C");
+    for (const oilPercent of [0, 2.5]) {
+      const t = text(flow({ leavening: "sourdough", oilPercent }));
+      expect(t.split(limit).length - 1, `oil=${oilPercent}`).toBe(1);
+    }
+  });
+
+  it("derives the fold rounds from the bulk stage, capped at the method's two", () => {
+    expect(foldRounds(0.5)).toBe(0);
+    expect(foldRounds(1)).toBe(0);
+    expect(foldRounds(1.25)).toBe(0);
+    expect(foldRounds(1.75)).toBe(1);
+    expect(foldRounds(2)).toBe(1);
+    expect(foldRounds(3)).toBe(2);
+    expect(foldRounds(8)).toBe(SOURDOUGH_METHOD.maxFoldRounds);
+
+    const i = inputs({ leavening: "sourdough" });
+    const s = buildSchedule(i);
+    const bulk = flow({ leavening: "sourdough" }).find((x) =>
+      x.title.startsWith("Bulk")
+    )!;
+    expect(bulk.detail).toContain(formatHours(s.bulkHours));
+    if (foldRounds(s.bulkHours) > 0) {
+      expect(bulk.detail).toContain(
+        `${SOURDOUGH_METHOD.foldsPerRound} stretch and folds`
+      );
+    } else {
+      expect(bulk.detail).not.toContain("stretch and folds");
+    }
+  });
+
+  it("quotes the cold, temper and pizza-size numbers the sliders set", () => {
+    const o = { coldFerment: true, coldHours: 20, coldTempC: 5, pizzaSizeIn: 12 } as const;
+    const s = buildSchedule(inputs({ leavening: "sourdough", ...o }));
+    const steps = flow({ leavening: "sourdough", ...o });
+    const cold = steps.find((x) => x.title === "Cold Ferment")!;
+    const temper = steps.find((x) => x.title === "Bring to Room Temperature")!;
+    const stretch = steps.find((x) => x.title === "Stretch")!;
+    expect(cold.detail).toContain(formatHours(s.coldHours));
+    expect(cold.detail).toContain(formatTemp(5, "C"));
+    expect(temper.detail).toContain(formatHours(s.temperHours));
+    expect(stretch.detail).toContain("12 in");
+  });
+
+  it("leaves every other method's flow untouched", () => {
+    for (const leavening of LEAVENINGS.filter((l) => l !== "sourdough")) {
+      const t = titles({ leavening });
+      expect(t, leavening).not.toContain("Autolyse");
+      expect(t, leavening).toContain("Delayed Salting & Bassinage");
+      expect(t, leavening).toContain("Bulk Rise");
     }
   });
 });

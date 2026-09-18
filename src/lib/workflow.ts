@@ -1,6 +1,7 @@
 import {
   BIGA_SCHEDULE,
   POOLISH_SCHEDULE,
+  SOURDOUGH_METHOD,
   YEAST_CONVERSION,
   YEAST_LABELS,
 } from "@/constants/dough";
@@ -267,12 +268,190 @@ function pizzaTime(c: Ctx): WorkflowStep {
   };
 }
 
-/** The three things that differ between methods; every other stage is shared. */
+/* -------------------------------------------------------------------------- */
+/* Sourdough: the Strgar 24-30 h method                                        */
+/* -------------------------------------------------------------------------- */
+
+/** Divide and ball for the sourdough flow, worded like `divideBallProof`. */
+function divideLead(c: Ctx): string {
+  const w = c.mass(c.inputs.doughballWeight);
+  return c.count <= 1
+    ? `Turn the dough onto the counter and shape it into a single tight ${w} ball. Roll it against the counter to seal the bottom and build top tension, then place it in a covered dough tray.`
+    : `Turn the dough onto the counter and divide it into ${c.count} equal balls of ${w}. Shape each into a tight ball, rolling it against the counter to seal the bottom and build top tension, then place them in a covered dough tray with two fingers of spacing.`;
+}
+
+function coolMixNote(c: Ctx): string {
+  return ` Keep an eye on the dough temperature and try to keep it below ${formatTemp(
+    SOURDOUGH_METHOD.doughTempMaxC,
+    c.tempUnit
+  )}.`;
+}
+
+function autolyse(c: Ctx): WorkflowStep {
+  const [lo, hi] = SOURDOUGH_METHOD.autolyseRangeMin;
+  return {
+    title: "Autolyse",
+    detail: `Add ${c.mass(
+      c.recipe.mainDough.flour
+    )} flour and most of the ice-cold water (${c.mass(
+      c.water.first
+    )}) to the mixer. Mix just enough to bring everything together, then cover and rest for ${lo}–${hi} minutes. Afterwards the dough should already feel more elastic and stretchy.`,
+  };
+}
+
+function addStarter(c: Ctx): WorkflowStep {
+  const s = c.recipe.starter!;
+  const sugar =
+    c.recipe.sugar > 0 ? ` and ${c.mass(c.recipe.sugar)} sugar` : "";
+  // With no oil card to carry the temperature note, it lands here instead.
+  const tail = c.recipe.oil > 0 ? "" : coolMixNote(c);
+  return {
+    title: "Add the Starter, Then Salt",
+    detail: `Add ${c.mass(
+      s.weight
+    )} active starter and begin mixing slowly. Once incorporated, add ${c.mass(
+      c.recipe.salt
+    )} salt${sugar} and gradually pour in the remaining ${c.mass(
+      c.water.second
+    )} cold water. Continue mixing until the dough comes together and starts developing strength.${tail}`,
+  };
+}
+
+function addOil(c: Ctx): WorkflowStep | null {
+  if (c.recipe.oil <= 0) return null;
+  return {
+    title: "Add the Olive Oil",
+    detail: `Once the dough has some strength and forms a smooth, elastic structure, add ${c.mass(
+      c.recipe.oil
+    )} olive oil. Continue mixing until the dough is well developed and stretchy.${coolMixNote(
+      c
+    )}`,
+  };
+}
+
+/**
+ * A round of stretch and folds at each hour mark of the bulk that still leaves
+ * the dough half an hour to relax afterwards, capped at the method's two
+ * rounds. A 3 h bulk folds after hours one and two; a short pre-fridge bulk of
+ * under 90 minutes gets none.
+ */
+export function foldRounds(bulkHours: number): number {
+  const { foldIntervalH, minRestAfterFoldH, maxFoldRounds } = SOURDOUGH_METHOD;
+  const rounds = Math.floor((bulkHours - minRestAfterFoldH) / foldIntervalH);
+  return Math.min(maxFoldRounds, Math.max(0, rounds));
+}
+
+function bulkWithFolds(c: Ctx): WorkflowStep {
+  const { bulkHours } = c.schedule;
+  const title = "Bulk & Stretch-and-Folds";
+  if (bulkHours < MIN_PRINTABLE_HOURS) {
+    return {
+      title,
+      detail:
+        "There is no ambient time budgeted before the chill, so move straight on to dividing and balling.",
+    };
+  }
+  const rounds = foldRounds(bulkHours);
+  const lead = `Transfer the dough to a bowl and shape it into a tight ball. Cover and leave at ${
+    c.roomTemp
+  } for ${c.hrs(bulkHours)}.`;
+  const folds =
+    rounds > 0
+      ? ` After each hour, perform ${SOURDOUGH_METHOD.foldsPerRound} stretch and folds and shape the dough back into a ball (${rounds} ${
+          rounds === 1 ? "round" : "rounds"
+        }), then let it rest for the remaining time.`
+      : " It is a short rest, so there is no need to fold.";
+  const finish = c.inputs.coldFerment
+    ? " This kickstarts fermentation before the dough goes cold."
+    : " The dough should be visibly expanded and aerated.";
+  return { title, detail: lead + folds + finish };
+}
+
+function divideBall(c: Ctx): WorkflowStep {
+  return { title: "Divide & Ball", detail: divideLead(c) };
+}
+
+function coldFerment(c: Ctx): WorkflowStep {
+  const s = c.schedule;
+  return {
+    title: "Cold Ferment",
+    detail: `Place the dough tray in the fridge at ${c.coldTemp} and leave it for ${c.hrs(
+      s.coldHours
+    )}. The long, cool rest is what builds the flavour and the open, airy rim.`,
+  };
+}
+
+function bringToRoomTemp(c: Ctx): WorkflowStep {
+  const s = c.schedule;
+  const them = c.count <= 1 ? "it" : "them";
+  return {
+    title: "Bring to Room Temperature",
+    detail: `Take the dough out of the fridge ${c.hrs(
+      s.temperHours
+    )} before baking and let ${them} come fully back to ${
+      c.roomTemp
+    } and relax. Dough that is still cold is harder to stretch and can burn in larger spots on the crust.`,
+  };
+}
+
+function finalProof(c: Ctx): WorkflowStep {
+  const s = c.schedule;
+  return {
+    title: "Final Proof",
+    detail: `Cover and proof at ${c.roomTemp} for ${c.hrs(
+      s.ballRestHours
+    )} until the balls have doubled, soft and puffy.`,
+  };
+}
+
+function stretch(c: Ctx): WorkflowStep {
+  return {
+    title: "Stretch",
+    detail: `Dust the dough and the work surface with finely milled semolina. Carefully lift a ball from the tray and gently open it, keeping as much air as possible in the rim. Stretch it out to about ${roundTo(
+      c.inputs.pizzaSizeIn,
+      1
+    )} in; don’t be afraid to stretch, that is what gives a large pizza with a thin base.`,
+  };
+}
+
+function sourdoughPizzaTime(c: Ctx): WorkflowStep {
+  const [lo, hi] = SOURDOUGH_METHOD.restAfterBakeSec;
+  const oven =
+    c.inputs.oven === "high"
+      ? "very hot pizza oven, around 2 minutes depending on your oven and temperature"
+      : "low heat oven until the rim is blistered and the base is crisp";
+  return {
+    title: "Pizza Time",
+    detail: `Add your toppings and bake in your ${oven}. Let the pizza rest for ${lo}–${hi} seconds on a rack before slicing.`,
+  };
+}
+
+/** The whole sourdough flow, replacing the shared sequence. */
+function sourdoughFlow(c: Ctx): WorkflowStep[] {
+  const steps: WorkflowStep[] = [];
+  const build = starterBuild(c);
+  if (build) steps.push(build);
+  steps.push(autolyse(c), addStarter(c));
+  const oil = addOil(c);
+  if (oil) steps.push(oil);
+  steps.push(bulkWithFolds(c), divideBall(c));
+  if (c.inputs.coldFerment) steps.push(coldFerment(c), bringToRoomTemp(c));
+  else steps.push(finalProof(c));
+  steps.push(stretch(c), sourdoughPizzaTime(c));
+  return steps;
+}
+
+/**
+ * The three things that differ between methods; every other stage is shared.
+ * A method that does not fit the shared sequence supplies `assemble` and owns
+ * its whole stage list instead.
+ */
 interface MethodPlan {
   build: (c: Ctx) => WorkflowStep | null;
   mixTitle: string;
   mixDetail: (c: Ctx) => string;
   waterFraction: number;
+  assemble?: (c: Ctx) => WorkflowStep[];
 }
 
 const STRAIGHT: MethodPlan = {
@@ -325,6 +504,7 @@ const PLANS: Record<LeaveningType, MethodPlan> = {
         c.water.first
       )}), until a rough, shaggy dough unifies with no dry pockets.`,
     waterFraction: STRAIGHT_WATER_FRACTION,
+    assemble: sourdoughFlow,
   },
 };
 
@@ -378,6 +558,8 @@ export function buildWorkflow(
       label: YEAST_LABELS.idy,
     },
   };
+
+  if (plan.assemble) return plan.assemble(c);
 
   const build = plan.build(c);
   const steps: WorkflowStep[] = [];

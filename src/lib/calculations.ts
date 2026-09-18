@@ -14,6 +14,7 @@ import {
   POOLISH_SCHEDULE,
   PRE_FRIDGE_BULK_CAP_H,
   PRE_FRIDGE_BULK_FRACTION,
+  SOURDOUGH_COLD_HANDLING,
   PROTEOLYSIS_K,
   PROTEOLYTIC_TOLERANCE_H,
   SALT_BASELINE,
@@ -347,6 +348,25 @@ export function resolveFormula(
  * and the ambient slider can be set to the 1-3 h of handling a cold-fermented
  * dough actually wants without starving the preferment.
  */
+/**
+ * How the ambient budget is split around a fridge stage, and how much of it is
+ * still handling rather than a rise. A sourdough gets the longer bulk its
+ * published schedules run; every other method keeps the short kickstart.
+ */
+export function coldHandling(inputs: WizardInputs): {
+  bulkFraction: number;
+  bulkCapH: number;
+  maxAmbientH: number;
+} {
+  return inputs.leavening === "sourdough"
+    ? SOURDOUGH_COLD_HANDLING
+    : {
+        bulkFraction: PRE_FRIDGE_BULK_FRACTION,
+        bulkCapH: PRE_FRIDGE_BULK_CAP_H,
+        maxAmbientH: MAX_AMBIENT_WITH_COLD_H,
+      };
+}
+
 export function buildSchedule(inputs: WizardInputs): Schedule {
   const remaining = Math.max(inputs.fermentationHours, 0.5);
   const isPoolish = inputs.leavening === "poolish";
@@ -379,10 +399,8 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
     // everything left over to temper and finish proofing the balls afterwards.
     // The temper floor is capped at `remaining` so the stages still sum to the
     // ambient time the user asked for, even when that time is very short.
-    const bulk = Math.min(
-      PRE_FRIDGE_BULK_CAP_H,
-      remaining * PRE_FRIDGE_BULK_FRACTION
-    );
+    const handling = coldHandling(inputs);
+    const bulk = Math.min(handling.bulkCapH, remaining * handling.bulkFraction);
     const temperHours = clamp(
       remaining - bulk,
       Math.min(MIN_TEMPER_H, remaining),
@@ -645,7 +663,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
           `${formatHours(MIN_TEMPER_H)} to come back to room temperature.`
       );
     }
-    if (inputs.fermentationHours > MAX_AMBIENT_WITH_COLD_H) {
+    if (inputs.fermentationHours > coldHandling(inputs).maxAmbientH) {
       warnings.add(
         "ambient-long-with-cold",
         "note",
