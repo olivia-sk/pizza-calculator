@@ -39,7 +39,7 @@ export function TopBadges({ recipe, settings, yeastOverride }: TopBadgesProps) {
         return (
           <div
             key={b.label}
-            className="flex items-center gap-1.5 rounded-lg border border-zinc-700/50 bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white"
+            className="flex items-center gap-1.5 rounded-lg border border-border bg-surface-sunken px-3 py-1.5 text-xs font-medium text-text"
           >
             {/*
               Set at the text's own size, not a step above it. An emoji fills its
@@ -53,8 +53,8 @@ export function TopBadges({ recipe, settings, yeastOverride }: TopBadgesProps) {
                 {icon}
               </span>
             )}
-            <span className="text-zinc-400">{b.label}</span>
-            <span className="relative top-px font-display font-bold text-accent-400 tabular-nums">{b.value}</span>
+            <span className="text-text-muted">{b.label}</span>
+            <span className="relative top-px font-display font-bold text-accent-700 tabular-nums">{b.value}</span>
           </div>
         );
       })}

@@ -44,14 +44,27 @@ function inputsFromSearch(search: string): Partial<WizardInputs> {
     patch.leavening = leavening as LeaveningType;
   }
 
+  const oven = params.get("oven");
+  if (oven === "high" || oven === "low") patch.oven = oven;
+
+  const cold = params.get("cold");
+  if (cold === "1" || cold === "0") patch.coldFerment = cold === "1";
+
+  // Mirrors the keys StepThreeActions writes; out-of-range values are clamped
+  // by the store's sanitize on the way in.
   const entries: [keyof WizardInputs, number | undefined][] = [
     ["pizzaCount", num("count")],
     ["doughballWeight", num("weight")],
     ["pizzaSizeIn", num("size")],
     ["hydration", num("hydration")],
     ["saltPercent", num("salt")],
+    ["oilPercent", num("oil")],
+    ["sugarPercent", num("sugar")],
+    ["sourdoughPercent", num("starter")],
     ["fermentationHours", num("hours")],
     ["roomTempC", num("temp")],
+    ["coldHours", num("coldHours")],
+    ["coldTempC", num("coldTemp")],
   ];
   for (const [key, value] of entries) {
     if (value !== undefined) Object.assign(patch, { [key]: value });

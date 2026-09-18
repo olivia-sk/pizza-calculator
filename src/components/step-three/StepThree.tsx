@@ -217,8 +217,8 @@ export function StepThree() {
                 <div
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold tabular-nums ${
                     i === timeline.length - 1
-                      ? "bg-accent-700 text-white"
-                      : "bg-zinc-900 text-white"
+                      ? "bg-accent-700 text-text-on-dark"
+                      : "bg-inverse text-inverse-text"
                   }`}
                   aria-hidden="true"
                 >

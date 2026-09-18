@@ -19,16 +19,26 @@ export function StepThreeActions() {
   const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "error">("idle");
 
   async function handleShare() {
+    // Every input the recipe is built from, so the link reproduces the recipe
+    // rather than only its headline numbers. Read back by inputsFromSearch in
+    // WizardContainer; the two key lists must agree.
     const params = new URLSearchParams({
       style: inputs.style,
+      oven: inputs.oven,
       count: String(inputs.pizzaCount),
       weight: String(roundTo(inputs.doughballWeight, 1)),
       size: String(roundTo(inputs.pizzaSizeIn, 1)),
       hydration: String(inputs.hydration),
       salt: String(inputs.saltPercent),
+      oil: String(inputs.oilPercent),
+      sugar: String(inputs.sugarPercent),
       leavening: inputs.leavening,
+      starter: String(inputs.sourdoughPercent),
       hours: String(inputs.fermentationHours),
       temp: String(roundTo(inputs.roomTempC, 2)),
+      cold: inputs.coldFerment ? "1" : "0",
+      coldHours: String(inputs.coldHours),
+      coldTemp: String(roundTo(inputs.coldTempC, 2)),
     });
     const url = `${typeof window !== "undefined" ? window.location.origin : ""}/?${params.toString()}`;
     try {
