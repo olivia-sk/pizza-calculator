@@ -157,6 +157,47 @@ export const SALT_FACTOR_BOUNDS = { min: 0.7, max: 1.5 } as const;
 export const COLD_DECAY_K = { commercial: 0.08, sourdough: 0.12 } as const;
 
 /**
+ * How a commercial-yeast dose is set once a fridge stage is involved.
+ *
+ * The fused clock above cannot do this job. Measured against published
+ * cold-ferment doses it ran 2.1-4.0x high at every duration (ambient 3 h @ 21 C,
+ * fridge 4 C: 0.433% / 0.234% / 0.156% at 24 / 48 / 72 h against a published
+ * 0.12% / 0.06% / 0.039%), and no value of COLD_DECAY_K.commercial fixes it:
+ * anything low enough to reach the published band drops below PROTEOLYSIS_K,
+ * which inverts the argument the overfermentation guardrail rests on - that
+ * chilling slows the gas more than it slows the enzymes. The best k that keeps
+ * that ordering still over-doses by ~2x. The functional form was the problem,
+ * not the constant.
+ *
+ * Tom Lehmann's schedule multipliers state the relationship directly: against a
+ * room-temperature dose of 1x, use 0.4x at 24 h, 0.2x at 48 h and 0.13x at 72 h
+ * of fridge. Those land almost exactly on a simple reciprocal,
+ *
+ *   factor = coldHourConstant / coldHours     (9.6/24 = 0.40, 9.6/48 = 0.20,
+ *                                              9.6/72 = 0.133)
+ *
+ * applied to the dose for referenceRoomH, which is the room-temperature
+ * schedule YEAST_MODEL is calibrated at (12 h @ 21 C -> ~0.30%, the same 1x
+ * anchor Lehmann quotes).
+ *
+ * The result is used as a CEILING, not a replacement: the dose is the lesser of
+ * what the whole schedule needs and what the fridge stage allows. That keeps
+ * short fridge stages sane - at 1-2 h the fused clock is still lower and governs,
+ * so a brief chill does not get a four-day dose - and it leaves the dose monotone
+ * in fridge time, ambient time and room temperature, which the audit sweep pins.
+ *
+ * Error against all seven published anchors falls from 207% to ~20%, which is
+ * the floor: the sources disagree with each other by about 2x.
+ *
+ * Sourdough does not use this. Its own dose is set by STARTER_MODEL, and the
+ * levain arm of COLD_DECAY_K is a separate, still-open question.
+ */
+export const COMMERCIAL_COLD_DOSE = {
+  referenceRoomH: 12,
+  coldHourConstant: 9.6,
+} as const;
+
+/**
  * Decay constant for the *protease* clock, the second of the two kinetics used
  * here. Flour proteases run at a Q10 of roughly 1.65 (e^(0.05*10) = 1.65),
  * markedly flatter than yeast's ~2.2, which is the whole reason a long cold
@@ -201,6 +242,22 @@ export const MIN_WEIGHABLE_YEAST_G = { note: 0.5, warn: 0.2 } as const;
  */
 export const MAX_AMBIENT_WITH_COLD_H = 6;
 
+/**
+ * The longest a temper is ever worth. Published figures top out at 6 h (Strgar
+ * 3-6 h; Leopard Crust 3-4 h in warm climates, 6-8 h in cold), and past that the
+ * dough is simply rising on the counter again. Without this cap a long ambient
+ * budget lands entirely in the temper - a 16 h budget produced a 3 h bulk and a
+ * 13 h temper - which is not a schedule any method runs. Time beyond the cap
+ * goes to the bulk instead, which is what the bulk-to-completion methods do.
+ *
+ * Applied to sourdough only, via SOURDOUGH_COLD_HANDLING.temperCapH. The
+ * commercial methods deliberately hold a short pre-fridge kickstart whatever the
+ * ambient budget (PRE_FRIDGE_BULK_CAP_H), and they already raise a note past
+ * MAX_AMBIENT_WITH_COLD_H, so they are left alone here. Their long-ambient
+ * schedules have the same oversized-temper shape and are a separate question.
+ */
+export const MAX_TEMPER_H = 6;
+
 /** Hydration above this needs strong flour and a careful hand. */
 export const HIGH_HYDRATION_PERCENT = 70;
 
@@ -212,14 +269,34 @@ export const PRE_FRIDGE_BULK_FRACTION = 0.25;
  * A sourdough runs the pre-fridge stage differently. The published cold-retard
  * pizza schedules bulk for 2-4 h with hourly stretch and folds before the
  * chill, then temper for 3-6 h after it (Strgar: 3 h + 3-6 h; Leopard Crust:
- * ~4 h + 3-8 h), so the ambient budget leans further towards the bulk, the cap
- * allows the full three hours, and the "that is a rise, not handling" note only
- * fires past the 9 h those schedules actually run.
+ * ~4 h + 3-8 h), so the ambient budget leans further towards the bulk and the
+ * cap allows the full three hours.
+ *
+ * maxAmbientH covers BOTH published schools, not just the short-bulk one. Strgar
+ * bulks ~3 h and lets the fridge do the work; Leopard Crust bulks to completion
+ * first (9 h at 18 C) and then tempers 6-8 h, which is 16 ambient hours around
+ * the fridge. At the old ceiling of 9 h the note fired on every Leopard-shaped
+ * schedule - flagging a documented method as a mistake - while staying quiet on
+ * a bake that actually failed. 16 h is that method's own total.
  */
 export const SOURDOUGH_COLD_HANDLING = {
   bulkFraction: 0.4,
   bulkCapH: 3,
-  maxAmbientH: 9,
+  maxAmbientH: 16,
+  temperCapH: MAX_TEMPER_H,
+  /**
+   * The same schedules, as the figures Step 2 quotes to the baker. They are
+   * here rather than written into the copy because they are not independent of
+   * the two constants above: `bulkFraction` and `bulkCapH` are what actually
+   * produce them, so a sentence that quotes different numbers is simply wrong.
+   * Across ambientRangeH the split yields 2.4-3.0 h of bulk and 3.6-6.0 h of
+   * temper, which is what bulkTargetH and temperRangeH describe. Change these
+   * only alongside the fraction and the cap; an invariant in audit.test.ts
+   * fails if they drift apart.
+   */
+  ambientRangeH: [6, 9],
+  bulkTargetH: 3,
+  temperRangeH: [3, 6],
 } as const;
 
 /** A doughball needs roughly this long out of the fridge to reach room temp. */
@@ -260,7 +337,43 @@ export const POOLISH_MODEL = {
   maxPercent: 1.5,
 } as const;
 
-/** Sourdough starter suggestion curve, percent of total flour. */
+/**
+ * Sourdough starter suggestion curve, percent of total flour:
+ *
+ *   Y(t, T) = C / t^n * exp(k * (Tref - T))
+ *
+ * Unlike the yeast and preferment curves above, this one is NOT a fit to a
+ * single documented source, because the published sourdough pizza methods
+ * disagree with each other by 3-6x. Backing out the C each one implies:
+ *
+ *   Rene Strgar   3 h bulk + ~15 h @ 5 C + 3-6 h temper -> 20%    -> C = 194-450
+ *   Leopard Crust 9 h bulk @ 18 C, then 48-72 h @ 4 C   -> 5-10%  -> C = 71
+ *   Leopard Crust 6 h bulk @ 24 C, then fridge          -> 10%    -> C = 76
+ *
+ * These are not two points on one curve, they are two different methods.
+ * Leopard Crust doses so the dough finishes its bulk at room temperature and
+ * treats the fridge as a hold; Strgar bulks briefly and lets the fridge do the
+ * work. C = 120 is a deliberate midpoint between them, not a fitted constant.
+ *
+ * Measured against published doses, the curve lands within ~13% on the
+ * bulk-to-completion schedules and under-reads the short-bulk/long-fridge shape
+ * badly:
+ *
+ *   Leopard Crust 48 h    actual  7.5%  ->  8.5%  (+13%)
+ *   Leopard Crust 72 h    actual  7.5%  ->  6.8%   (-9%)
+ *   classic 4 h + 24 h    actual 15.0%  -> 16.9%  (+12%)
+ *   Strgar 24-30 h        actual 20.0%  -> 12.4%  (-38%)   <- worst fit
+ *
+ * That last row is a known, accepted discrepancy: SOURDOUGH_METHOD below names
+ * Strgar, and the schedule builder generates his short-bulk shape, but the dose
+ * comes out Leopard-style. Raising C to chase it would move every other
+ * schedule, so it is documented rather than fixed. Treat any suggestion here as
+ * a starting point with real uncertainty, not a solved number.
+ *
+ * n = 1 (plain 1/t) and k = 0.08 are carried over from YEAST_MODEL. Note k is
+ * NOT inert: `dose` is called with the room temperature, so changing it shifts
+ * every schedule away from 21 C by up to 15%.
+ */
 export const STARTER_MODEL = {
   C: 120,
   n: 1,
@@ -310,6 +423,19 @@ export const SOURDOUGH_METHOD = {
   maxFoldRounds: 2,
   foldsPerRound: 4,
   restAfterBakeSec: [30, 60],
+  /**
+   * Strgar feeds 1:4:3 and mixes 6-8 h later, with the starter at its peak.
+   * The app cannot see starter condition, and a sluggish or over-ripe culture is
+   * the one variable no dose can compensate for: past its peak it carries little
+   * gas and a lot of acid, which is flat, slack, gummy dough.
+   */
+  starterFeedLeadH: [6, 8],
+  /**
+   * The Perfect Loaf divides at 30-40% rise - less than a bread bulk, to keep
+   * structure for the stretch. Quoted alongside the clock so the dough, not the
+   * timer, is the judge; this is what absorbs the variation in starter vigour.
+   */
+  bulkRisePercent: [30, 40],
 } as const;
 
 /**

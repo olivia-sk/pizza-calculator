@@ -97,6 +97,8 @@ export type WarningId =
   | "poolish-hydration"
   | "biga-hydration"
   | "yeast-capped"
+  | "starter-capped"
+  | "starter-floored"
   | "overferment-caution"
   | "overferment-severe"
   | "microdose-note"

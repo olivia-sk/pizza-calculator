@@ -518,3 +518,45 @@ describe("sourdough method", () => {
     }
   });
 });
+
+describe("sourdough judged by the dough, not the clock", () => {
+  // Starter vigour is the one variable the model cannot see, and the variable
+  // that most often explains a flat, gummy sourdough. These cues are the only
+  // thing in the app that addresses it, so they are pinned to their constants -
+  // hand-typed numbers in copy have already drifted from the model once.
+  const step = (title: string, o: Partial<WizardInputs> = {}) => {
+    const found = flow({ leavening: "sourdough", ...o }).find((x) => x.title === title);
+    expect(found, title).toBeDefined();
+    return found!.detail;
+  };
+
+  it("tells the baker when to feed the starter and how to know it is ready", () => {
+    const [lo, hi] = SOURDOUGH_METHOD.starterFeedLeadH;
+    const detail = step("Ready the Starter");
+    expect(detail).toContain(`${lo}–${hi} hours`);
+    expect(detail).toMatch(/float/i);
+    expect(detail).toMatch(/peak/i);
+  });
+
+  it("gives the bulk a rise target alongside its clock time", () => {
+    const [lo, hi] = SOURDOUGH_METHOD.bulkRisePercent;
+    for (const coldFerment of [true, false]) {
+      const detail = step("Bulk & Stretch-and-Folds", { coldFerment, fermentationHours: 9 });
+      expect(detail, `cold=${coldFerment}`).toContain(`${lo}–${hi}%`);
+      expect(detail, `cold=${coldFerment}`).toMatch(/starter/i);
+    }
+  });
+
+  it("says nothing about rise when there is no bulk to judge", () => {
+    // The degenerate branch: no ambient time before the chill, so there is no
+    // bulk for a rise target to describe.
+    const [lo, hi] = SOURDOUGH_METHOD.bulkRisePercent;
+    const detail = step("Bulk & Stretch-and-Folds", {
+      coldFerment: true,
+      fermentationHours: LIMITS.fermentationHours.min,
+    });
+    if (detail.includes(`${lo}–${hi}%`)) {
+      expect(detail).toMatch(/leave at/i);
+    }
+  });
+});

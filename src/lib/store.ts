@@ -40,7 +40,13 @@ const defaultInputs: WizardInputs = {
   roomTempC: 21,
   coldFerment: false,
   coldHours: 24,
-  coldTempC: 4,
+  // Not 4 C. A survey of ~10,000 European household fridges put the average at
+  // 6.4 C, and the dose is sensitive to this: at a true 6.4 C a schedule entered
+  // as 4 C gets meaningfully more fermentation than the model predicts. Rounded
+  // to 6 because the slider steps in whole degrees. Bakers who know their fridge
+  // runs colder can still say so; this is the honest starting point for the
+  // majority who have never measured it.
+  coldTempC: 6,
 };
 
 const defaultSettings: SettingsState = {

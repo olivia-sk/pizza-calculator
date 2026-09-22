@@ -173,15 +173,17 @@ function bigaBuild(c: Ctx): WorkflowStep | null {
 function starterBuild(c: Ctx): WorkflowStep | null {
   const s = c.recipe.starter;
   if (!s) return null;
+  const [feedLo, feedHi] = SOURDOUGH_METHOD.starterFeedLeadH;
   return {
     title: "Ready the Starter",
-    detail: `Use ${c.mass(
-      s.weight
-    )} of ripe 100% hydration starter, at its peak. It carries ${c.mass(
-      s.flour
-    )} flour and ${c.mass(
-      s.water
-    )} water, already counted in the totals below.`,
+    detail:
+      `Use ${c.mass(s.weight)} of ripe 100% hydration starter, at its peak. ` +
+      `Feed it ${feedLo}–${feedHi} hours before you mix, and use it once it has ` +
+      `risen and domed but not yet begun to sink; a spoonful should float in ` +
+      `water. A starter past its peak carries more acid than gas, which makes a ` +
+      `dough slack and gummy however the schedule is set. ` +
+      `It carries ${c.mass(s.flour)} flour and ${c.mass(s.water)} water, ` +
+      `already counted in the totals below.`,
   };
 }
 
@@ -361,9 +363,14 @@ function bulkWithFolds(c: Ctx): WorkflowStep {
           rounds === 1 ? "round" : "rounds"
         }), then let it rest for the remaining time.`
       : " It is a short rest, so there is no need to fold.";
+  const [riseLo, riseHi] = SOURDOUGH_METHOD.bulkRisePercent;
   const finish = c.inputs.coldFerment
-    ? " This kickstarts fermentation before the dough goes cold."
-    : " The dough should be visibly expanded and aerated.";
+    ? ` It should be up about ${riseLo}–${riseHi}% before it goes in. Give it`+
+      ` longer if your starter is slow: the clock here is an estimate, the dough`+
+      ` is the judge.`
+    : ` The dough should be up about ${riseLo}–${riseHi}% and visibly aerated,`+
+      ` which may take more or less than the time above depending on how lively`+
+      ` your starter is.`;
   return { title, detail: lead + folds + finish };
 }
 

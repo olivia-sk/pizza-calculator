@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   buildSchedule,
+  calcIdyPercent,
   calculateRecipe,
   effectiveFermentationHours,
   equivalentHours,
   proteolyticHours,
+  resolveFormula,
   saltRetardationFactor,
+  suggestedStarterPercent,
 } from "./calculations";
 import { LIMITS, defaultInputs } from "./store";
 import {
@@ -16,8 +19,11 @@ import {
   MIN_TEMPER_H,
   MIN_WEIGHABLE_YEAST_G,
   POOLISH_SCHEDULE,
+  COMMERCIAL_COLD_DOSE,
+  MAX_TEMPER_H,
   PROTEOLYSIS_K,
   PROTEOLYTIC_TOLERANCE_H,
+  STARTER_MODEL,
   STYLES,
 } from "@/constants/dough";
 import { LeaveningType, PizzaStyle, WarningId, WizardInputs } from "@/types";
@@ -712,5 +718,300 @@ describe("range guards", () => {
       expect(style.defaultSugar, style.id).toBeGreaterThanOrEqual(LIMITS.sugarPercent.min);
       expect(style.defaultSugar, style.id).toBeLessThanOrEqual(LIMITS.sugarPercent.max);
     }
+  });
+});
+
+describe("suggested sourdough starter", () => {
+  /** What simple mode actually puts in front of the baker. */
+  const suggest = (o: Partial<WizardInputs>) =>
+    resolveFormula(inputs({ leavening: "sourdough", ...o }), false).sourdoughPercent;
+
+  it("stays inside the band the advanced slider can show", () => {
+    // resolveFormula writes into the same field the slider binds to, so the
+    // model band and the slider limits have to be the same numbers. This is
+    // currently a coincidence in the source; pin it.
+    expect(STARTER_MODEL.minPercent).toBe(LIMITS.sourdoughPercent.min);
+    expect(STARTER_MODEL.maxPercent).toBe(LIMITS.sourdoughPercent.max);
+  });
+
+  it("matches the anchors it was calibrated against", () => {
+    // These are the published schedules recorded in STARTER_MODEL's docstring,
+    // converted to this app's inputs. They run ~4.8% above the bare curve values
+    // quoted there, because resolveFormula corrects against the style's salt
+    // (neapolitan 2.9% -> x1.048) while the docstring quotes the curve itself.
+    //
+    // Observations, not targets: if a recalibration moves them, re-derive from
+    // the sources rather than nudging the numbers here until the test is quiet.
+    const anchors: [string, Partial<WizardInputs>, number][] = [
+      ["app default 12 h @ 21 C", { fermentationHours: 12 }, 10.5],
+      ["8 h @ 21 C", { fermentationHours: 8 }, 15.7],
+      ["same-day 4 h @ 24 C", { fermentationHours: 4, roomTempC: 24 }, 24.7],
+      [
+        "classic 4 h + 24 h @ 4 C",
+        { fermentationHours: 4, coldFerment: true, coldHours: 24, coldTempC: 4 },
+        17.7,
+      ],
+      [
+        "Leopard Crust 9 h @ 18 C + 48 h @ 4 C",
+        { fermentationHours: 9, roomTempC: 18, coldFerment: true, coldHours: 48, coldTempC: 4 },
+        8.9,
+      ],
+    ];
+    for (const [label, o, expected] of anchors) {
+      expect(suggest(o), label).toBeCloseTo(expected, 0);
+    }
+  });
+
+  it("does not let a long cold ferment read as a short one", () => {
+    // The regression. A real bake ran 6 h ambient plus a 33 h cold ferment at
+    // 4 C, was given ~11.7% starter, and came out of the fridge flat and
+    // structureless. The dose itself is within the (very wide) band of
+    // published practice, so what is pinned here is the *ordering*: a 33 h cold
+    // ferment must ask for less starter than a 24 h one and more than a 48 h
+    // one. That survives a recalibration; a bare literal would not.
+    const cold = (coldHours: number) =>
+      suggest({ fermentationHours: 6, coldFerment: true, coldHours, coldTempC: 4 });
+
+    expect(cold(33)).toBeLessThan(cold(24));
+    expect(cold(33)).toBeGreaterThan(cold(48));
+    expect(cold(33)).toBeCloseTo(12.2, 0);
+  });
+
+  it("reports both ends of the band instead of clamping silently", () => {
+    // The curve saturates at both ends, and resolveFormula clamps outside the
+    // warning collector, so without these the baker is handed a number the
+    // model does not actually stand behind.
+    const capped = calculateRecipe(
+      inputs({ leavening: "sourdough", fermentationHours: 1, roomTempC: 15 })
+    );
+    expect(ids(capped)).toContain("starter-capped");
+
+    const floored = calculateRecipe(
+      inputs({
+        leavening: "sourdough",
+        fermentationHours: 25,
+        roomTempC: 35,
+        coldFerment: true,
+        coldHours: 96,
+        coldTempC: 10,
+      })
+    );
+    expect(ids(floored)).toContain("starter-floored");
+  });
+
+  it("names a stage the schedule actually has when the starter bottoms out", () => {
+    // starter-floored suggests shortening something. Without a fridge stage it
+    // must not suggest shortening the fridge stage.
+    const noCold = calculateRecipe(
+      inputs({ leavening: "sourdough", fermentationHours: 25, roomTempC: 35 })
+    );
+    expect(ids(noCold)).toContain("starter-floored");
+    expect(texts(noCold)).not.toMatch(/fridge/i);
+  });
+
+  it("reads the curve, not the salt, when deciding the band is exhausted", () => {
+    // dose() clamps before the salt correction is applied, so testing the
+    // salt-corrected value would mean a 2.9%-salt dough could never report the
+    // floor at all. Salt must not change whether the guardrail fires.
+    const at = (saltPercent: number) =>
+      ids(
+        calculateRecipe(
+          inputs({
+            leavening: "sourdough",
+            fermentationHours: 25,
+            roomTempC: 35,
+            coldFerment: true,
+            coldHours: 96,
+            coldTempC: 10,
+            saltPercent,
+          })
+        )
+      ).includes("starter-floored");
+
+    expect(at(LIMITS.saltPercent.min)).toBe(true);
+    expect(at(LIMITS.saltPercent.max)).toBe(true);
+  });
+
+  it("is the same function the simple-mode display reads", () => {
+    // resolveFormula corrects against the style's salt, not the raw input, so
+    // these must agree or the modal and the recipe would disagree.
+    const i = inputs({ leavening: "sourdough", fermentationHours: 12 });
+    expect(resolveFormula(i, false).sourdoughPercent).toBe(
+      suggestedStarterPercent(
+        effectiveFermentationHours(i),
+        i.roomTempC,
+        STYLES[i.style].defaultSalt
+      )
+    );
+  });
+
+  it("leaves an advanced-mode override untouched", () => {
+    const i = inputs({ leavening: "sourdough", sourdoughPercent: 22 });
+    expect(resolveFormula(i, true).sourdoughPercent).toBe(22);
+  });
+});
+
+describe("ambient budget around a cold ferment", () => {
+  it("sends a long ambient budget to the bulk, not to an absurd temper", () => {
+    // Before the cap, every hour the bulk cap refused landed in the temper: a
+    // 16 h budget gave a 3 h bulk and a 13 h temper, which is not a shape any
+    // published method runs. Leopard Crust bulks to completion (9 h at 18 C)
+    // and then tempers 6-8 h; the surplus belongs in the bulk.
+    const s = buildSchedule(
+      inputs({ leavening: "sourdough", coldFerment: true, fermentationHours: 16 })
+    );
+    expect(s.temperHours).toBeCloseTo(MAX_TEMPER_H, 9);
+    expect(s.bulkHours).toBeCloseTo(10, 9);
+    expect(s.bulkHours + s.temperHours).toBeCloseTo(16, 9);
+  });
+
+  it("leaves the short schedules exactly where they were", () => {
+    // The cap must only bite above the point the temper would exceed it, so
+    // every schedule inside the recommended band is untouched.
+    for (const [ambient, bulk, temper] of [
+      [4, 1.6, 2.4],
+      [6, 2.4, 3.6],
+      [9, 3.0, 6.0],
+    ] as const) {
+      const s = buildSchedule(
+        inputs({ leavening: "sourdough", coldFerment: true, fermentationHours: ambient })
+      );
+      expect(s.bulkHours, `${ambient}h bulk`).toBeCloseTo(bulk, 9);
+      expect(s.temperHours, `${ambient}h temper`).toBeCloseTo(temper, 9);
+    }
+  });
+
+  it("never lets a sourdough temper run past the cap, at any ambient time", () => {
+    for (let h = LIMITS.fermentationHours.min; h <= LIMITS.fermentationHours.max; h += 0.25) {
+      const s = buildSchedule(
+        inputs({ leavening: "sourdough", coldFerment: true, fermentationHours: h })
+      );
+      expect(s.temperHours, `${h}h`).toBeLessThanOrEqual(MAX_TEMPER_H + 1e-9);
+      expect(s.bulkHours + s.temperHours, `${h}h sums`).toBeCloseTo(Math.max(h, 0.5), 9);
+    }
+  });
+
+  it("stops calling the bulk-to-completion method a mistake", () => {
+    // The regression. Leopard Crust bulks 9 h at 18 C, chills, then tempers
+    // 6-8 h — 16 ambient hours around the fridge. The old 9 h ceiling raised
+    // "that is a rise, not handling" on every schedule of that shape, while
+    // staying quiet on a bake that actually failed.
+    const leopard = inputs({
+      leavening: "sourdough",
+      coldFerment: true,
+      fermentationHours: 16,
+      roomTempC: 18,
+      coldHours: 48,
+      coldTempC: 4,
+    });
+    expect(ids(calculateRecipe(leopard))).not.toContain("ambient-long-with-cold");
+
+    // Still catches a genuinely excessive counter stage.
+    expect(
+      ids(
+        calculateRecipe({
+          ...leopard,
+          fermentationHours: SOURDOUGH_COLD_HANDLING.maxAmbientH + 1,
+        })
+      )
+    ).toContain("ambient-long-with-cold");
+  });
+
+  it("defaults the fridge to a temperature real fridges actually run at", () => {
+    // ~10,000 European household fridges average 6.4 C, not the 4 C the app
+    // used to assume. The slider steps in whole degrees, hence 6.
+    expect(defaultInputs.coldTempC).toBe(6);
+    expect(defaultInputs.coldTempC).toBeGreaterThanOrEqual(LIMITS.coldTempC.min);
+    expect(defaultInputs.coldTempC).toBeLessThanOrEqual(LIMITS.coldTempC.max);
+  });
+});
+
+describe("commercial yeast with a cold ferment", () => {
+  // Ambient 3 h @ 21 C, fridge 4 C - the handling window these published
+  // schedules actually run. Doses are percent of total flour.
+  const cold = (coldHours: number) =>
+    calculateRecipe(
+      inputs({
+        leavening: "idy",
+        fermentationHours: 3,
+        roomTempC: 21,
+        coldFerment: true,
+        coldHours,
+        coldTempC: 4,
+      })
+    ).yeastPercent;
+
+  it("matches Lehmann's schedule multipliers", () => {
+    // 1x room temperature = 0.30%, then 0.4x / 0.2x / 0.13x at 24 / 48 / 72 h.
+    // Before the ceiling the model returned 0.433 / 0.234 / 0.156 - 2.1 to 4.0x
+    // every published figure, with no guardrail saying so.
+    for (const [coldHours, published] of [[24, 0.12], [48, 0.06], [72, 0.039]] as const) {
+      const got = cold(coldHours);
+      expect(got, `${coldHours}h`).toBeGreaterThan(published * 0.8);
+      expect(got, `${coldHours}h`).toBeLessThan(published * 1.25);
+    }
+  });
+
+  it("stays inside the band every source agrees on", () => {
+    // The sources disagree with each other by ~2x, so this is the envelope, not
+    // a point target: Lehmann at the bottom, the consensus range at the top.
+    for (const [coldHours, lo, hi] of [[24, 0.12, 0.2], [48, 0.05, 0.1], [72, 0.039, 0.1]] as const) {
+      const got = cold(coldHours);
+      expect(got, `${coldHours}h lower`).toBeGreaterThanOrEqual(lo * 0.9);
+      expect(got, `${coldHours}h upper`).toBeLessThanOrEqual(hi * 1.1);
+    }
+  });
+
+  it("lets the schedule clock govern a brief chill", () => {
+    // The ceiling is a ceiling, not a replacement. A 1-2 h chill is not a cold
+    // ferment, and must not collect a multi-day dose.
+    expect(cold(1)).toBeGreaterThan(1);
+    expect(cold(1)).toBeGreaterThan(cold(24));
+  });
+
+  it("keeps the dose monotone in every axis the ceiling touches", () => {
+    let previous = Infinity;
+    for (let ch = LIMITS.coldHours.min; ch <= LIMITS.coldHours.max; ch += 1) {
+      const v = cold(ch);
+      expect(v, `cold ${ch}h`).toBeLessThanOrEqual(previous + 1e-9);
+      previous = v;
+    }
+    const warmer = (roomTempC: number) =>
+      calculateRecipe(
+        inputs({
+          leavening: "idy",
+          fermentationHours: 3,
+          roomTempC,
+          coldFerment: true,
+          coldHours: 48,
+          coldTempC: 4,
+        })
+      ).yeastPercent;
+    previous = Infinity;
+    for (let t = LIMITS.roomTempC.min; t <= LIMITS.roomTempC.max; t += 1) {
+      const v = warmer(t);
+      expect(v, `room ${t}C`).toBeLessThanOrEqual(previous + 1e-9);
+      previous = v;
+    }
+  });
+
+  it("leaves room-temperature doughs and sourdough alone", () => {
+    // The ceiling only applies with a fridge stage, and only to commercial yeast.
+    const room = calculateRecipe(
+      inputs({ leavening: "idy", fermentationHours: 12, roomTempC: 21 })
+    );
+    expect(room.yeastPercent).toBeCloseTo(
+      calcIdyPercent(COMMERCIAL_COLD_DOSE.referenceRoomH, 21) *
+        saltRetardationFactor(defaultInputs.saltPercent),
+      3 // yeastPercent is rounded for display
+    );
+    const levain = inputs({
+      leavening: "sourdough",
+      fermentationHours: 6,
+      coldFerment: true,
+      coldHours: 33,
+      coldTempC: 4,
+    });
+    expect(calculateRecipe(levain).yeastPercent).toBe(levain.sourdoughPercent);
   });
 });

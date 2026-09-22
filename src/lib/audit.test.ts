@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { buildSchedule, calculateRecipe, formatMass } from "./calculations";
+import {
+  buildSchedule,
+  calculateRecipe,
+  formatMass,
+  resolveFormula,
+} from "./calculations";
 import { buildWorkflow } from "./workflow";
 import { LIMITS, defaultInputs } from "./store";
 import {
@@ -10,7 +15,7 @@ import {
   WarningId,
   WizardInputs,
 } from "@/types";
-import { STYLES } from "@/constants/dough";
+import { SOURDOUGH_COLD_HANDLING, STYLES } from "@/constants/dough";
 
 /*
   A sweep of the reachable input space, run as one suite so that a whole class of
@@ -65,6 +70,16 @@ function* grid(): Generator<WizardInputs> {
   }
 }
 
+/**
+ * The same grid, as simple mode actually resolves it. `grid()` yields the raw
+ * store values, where `sourdoughPercent` is always the literal default, so it
+ * never exercises the starter curve at all. Everything a baker who has not
+ * touched advanced mode sees comes through `resolveFormula` first.
+ */
+function* resolvedGrid(): Generator<WizardInputs> {
+  for (const i of grid()) yield resolveFormula(i, false);
+}
+
 const where = (i: WizardInputs) =>
   `${i.leavening} ${i.fermentationHours}h@${i.roomTempC}C` +
   (i.coldFerment ? ` +${i.coldHours}h@${i.coldTempC}C` : " no-cold");
@@ -72,6 +87,8 @@ const where = (i: WizardInputs) =>
 /** Warnings a baker can actually provoke from the sliders alone. */
 const REACHABLE: WarningId[] = [
   "yeast-capped",
+  "starter-capped",
+  "starter-floored",
   "overferment-caution",
   "overferment-severe",
   "microdose-note",
@@ -189,6 +206,82 @@ describe("input space audit", () => {
     }
   });
 
+  it("keeps the suggested starter monotone in every axis that adds ferment", () => {
+    // The gap this pins. The sweep above drives raw store values, where
+    // sourdoughPercent is a fixed literal, so the starter curve was never
+    // touched by any test. A real bake failed on a 33 h cold ferment that the
+    // model read as ~4 equivalent hours; the coldHours axis here is the one
+    // that puts a number on that.
+    //
+    // Non-increasing rather than strictly decreasing, so a future saturating
+    // term in the cold stage does not fail this falsely.
+    const sd = { ...defaultInputs, leavening: "sourdough" as const };
+    const starter = (i: WizardInputs) => resolveFormula(i, false).sourdoughPercent;
+
+    for (const roomTempC of [15, 21, 28, 35]) {
+      let previous = Infinity;
+      for (let h = 1; h <= LIMITS.fermentationHours.max; h += 0.5) {
+        const label = `ambient ${h}h @${roomTempC}C`;
+        const v = starter({ ...sd, roomTempC, fermentationHours: h });
+        expect(v, label).toBeLessThanOrEqual(previous + 1e-9);
+        previous = v;
+      }
+
+      previous = Infinity;
+      for (let ch = 1; ch <= LIMITS.coldHours.max; ch += 1) {
+        const label = `cold ${ch}h, room ${roomTempC}C`;
+        const v = starter({ ...sd, roomTempC, coldFerment: true, coldHours: ch });
+        expect(v, label).toBeLessThanOrEqual(previous + 1e-9);
+        previous = v;
+      }
+    }
+
+    let previous = Infinity;
+    for (let t = LIMITS.roomTempC.min; t <= LIMITS.roomTempC.max; t += 1) {
+      const v = starter({ ...sd, roomTempC: t });
+      expect(v, `room ${t}C`).toBeLessThanOrEqual(previous + 1e-9);
+      previous = v;
+    }
+  });
+
+  it("only ever suggests a starter the slider can actually show", () => {
+    // resolveFormula writes straight into the same field the advanced slider
+    // binds to, so a suggestion outside the slider band would be unreachable
+    // and silently re-clamped the moment the baker opened the modal.
+    for (const i of resolvedGrid()) {
+      if (i.leavening !== "sourdough") continue;
+      const v = i.sourdoughPercent;
+      expect(Number.isFinite(v), where(i)).toBe(true);
+      expect(v, where(i)).toBeGreaterThanOrEqual(LIMITS.sourdoughPercent.min);
+      expect(v, where(i)).toBeLessThanOrEqual(LIMITS.sourdoughPercent.max);
+    }
+  });
+
+  it("describes a split the schedule builder actually produces", () => {
+    // Step 2 tells a sourdough baker how to spend the ambient budget, quoting
+    // hours from SOURDOUGH_COLD_HANDLING. Those figures are not free: the same
+    // constant's bulkFraction and bulkCapH are what produce them. This pins the
+    // sentence to the schedule, because nothing else does — the sweep checks
+    // that warnings never name an absent stage, but guidance copy had no such
+    // guard, and it drifted.
+    const { ambientRangeH, bulkTargetH, temperRangeH } = SOURDOUGH_COLD_HANDLING;
+    const [loAmbient, hiAmbient] = ambientRangeH;
+    const [loTemper, hiTemper] = temperRangeH;
+
+    for (let h = loAmbient; h <= hiAmbient; h += 0.25) {
+      const schedule = buildSchedule({
+        ...defaultInputs,
+        leavening: "sourdough",
+        fermentationHours: h,
+        coldFerment: true,
+      });
+      const label = `${h}h ambient -> ${schedule.bulkHours}h bulk / ${schedule.temperHours}h temper`;
+      expect(schedule.bulkHours, label).toBeLessThanOrEqual(bulkTargetH + 1e-9);
+      expect(schedule.temperHours, label).toBeGreaterThanOrEqual(loTemper - 1e-9);
+      expect(schedule.temperHours, label).toBeLessThanOrEqual(hiTemper + 1e-9);
+    }
+  });
+
   it("conserves mass for every style, leavening and batch size", () => {
     for (const style of STYLE_IDS) {
       for (const leavening of LEAVENINGS) {
@@ -243,6 +336,7 @@ describe("input space audit", () => {
     const EXCLUSIVE: [WarningId, WarningId][] = [
       ["overferment-caution", "overferment-severe"],
       ["microdose-note", "microdose-warn"],
+      ["starter-capped", "starter-floored"],
     ];
     for (const i of grid()) {
       const ids = calculateRecipe(i).warnings.map((w) => w.id);

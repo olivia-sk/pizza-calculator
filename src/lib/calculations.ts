@@ -4,6 +4,7 @@ import {
   BIGA_MODEL,
   BIGA_SCHEDULE,
   COLD_DECAY_K,
+  COMMERCIAL_COLD_DOSE,
   GRAMS_PER_OUNCE,
   MAX_AMBIENT_WITH_COLD_H,
   MIN_TEMPER_H,
@@ -122,6 +123,23 @@ export function saltRetardationFactor(saltPercent: number): number {
 /** Instant dry yeast, percent of total flour, for a straight dough. */
 export function calcIdyPercent(hours: number, roomTempC: number): number {
   return dose(YEAST_MODEL, hours, roomTempC);
+}
+
+/**
+ * The most yeast a fridge stage of this length tolerates, as a percentage of
+ * total flour. Lehmann's schedule multipliers against the room-temperature
+ * reference dose; see COMMERCIAL_COLD_DOSE for the fit, and for why the fused
+ * clock cannot express this.
+ */
+export function coldDoseCeiling(inputs: WizardInputs): number {
+  const { referenceRoomH, coldHourConstant } = COMMERCIAL_COLD_DOSE;
+  const reference = calcIdyPercent(referenceRoomH, inputs.roomTempC);
+  const hours = Math.max(inputs.coldHours, 0.25);
+  return clamp(
+    reference * (coldHourConstant / hours),
+    YEAST_MODEL.minPercent,
+    YEAST_MODEL.maxPercent
+  );
 }
 
 /**
@@ -357,6 +375,8 @@ export function coldHandling(inputs: WizardInputs): {
   bulkFraction: number;
   bulkCapH: number;
   maxAmbientH: number;
+  /** Infinity for the methods that hold a short kickstart regardless. */
+  temperCapH: number;
 } {
   return inputs.leavening === "sourdough"
     ? SOURDOUGH_COLD_HANDLING
@@ -364,6 +384,7 @@ export function coldHandling(inputs: WizardInputs): {
         bulkFraction: PRE_FRIDGE_BULK_FRACTION,
         bulkCapH: PRE_FRIDGE_BULK_CAP_H,
         maxAmbientH: MAX_AMBIENT_WITH_COLD_H,
+        temperCapH: Number.POSITIVE_INFINITY,
       };
 }
 
@@ -401,10 +422,15 @@ export function buildSchedule(inputs: WizardInputs): Schedule {
     // ambient time the user asked for, even when that time is very short.
     const handling = coldHandling(inputs);
     const bulk = Math.min(handling.bulkCapH, remaining * handling.bulkFraction);
+    // The temper is capped as well as floored. Without a ceiling every hour the
+    // bulk cap refuses lands in the temper, so a long ambient budget produced a
+    // 3 h bulk and a 13 h temper - a shape no published method runs. Capping it
+    // sends the surplus back to the bulk, which is exactly what the
+    // bulk-to-completion schedules do with it.
     const temperHours = clamp(
       remaining - bulk,
       Math.min(MIN_TEMPER_H, remaining),
-      remaining
+      Math.min(handling.temperCapH, remaining)
     );
     return {
       ...preferment,
@@ -487,6 +513,34 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
   if (isSourdough) {
     yeastPercent = clamp(inputs.sourdoughPercent, 0, 50);
     yeastDosePercent = yeastPercent;
+    // Asked of the *model*, not of the dose on the plate, so the guardrail is a
+    // statement about the schedule and fires the same whether the baker took the
+    // suggestion or typed their own. The clamp itself happens inside
+    // `resolveFormula`, which runs outside this collector and so cannot report.
+    //
+    // Left at the baseline salt on purpose, for the same reason `yeast-capped`
+    // is tested before its salt correction: hitting the end of the band is a
+    // property of the dosing curve. Passing the real salt would let a merely
+    // salty dough read as a schedule the model cannot reach, and - since the
+    // correction is applied after `dose` has already clamped - would stop the
+    // floor from ever being reported at all.
+    const suggested = suggestedStarterPercent(effHours, inputs.roomTempC);
+    if (suggested >= STARTER_MODEL.maxPercent - 1e-9) {
+      warnings.add(
+        "starter-capped",
+        "warn",
+        `Starter is capped at ${STARTER_MODEL.maxPercent}%. That fermentation time is very short for this room temperature.`
+      );
+    } else if (suggested <= STARTER_MODEL.minPercent + 1e-9) {
+      warnings.add(
+        "starter-floored",
+        "warn",
+        `Starter is at its ${STARTER_MODEL.minPercent}% floor. This schedule runs longer than even a minimum starter can sit through, so the dough will be past its peak before you bake. ` +
+          (inputs.coldFerment
+            ? "Shorten the fridge stage or run the room ferment cooler."
+            : "Shorten the room ferment or run it cooler.")
+      );
+    }
     const starterFlourPercent = yeastPercent / (1 + STARTER_HYDRATION);
     if (H * 100 < starterFlourPercent) {
       warnings.add(
@@ -519,6 +573,12 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
   } else {
     const conv = YEAST_CONVERSION[inputs.leavening as "idy" | "ady" | "fresh"];
     const base = calcIdyPercent(effHours, inputs.roomTempC);
+    // With a fridge stage the schedule's own clock is not what sets the dose;
+    // see COMMERCIAL_COLD_DOSE. Taken as a ceiling rather than a replacement, so
+    // a short chill still falls to the clock and the dose stays monotone.
+    const limited = inputs.coldFerment
+      ? Math.min(base, coldDoseCeiling(inputs))
+      : base;
     // The cap is a property of the dosing curve, so it is tested before the
     // salt correction. Testing after would let a merely salty dough look like
     // an impossibly short ferment.
@@ -529,7 +589,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
         "Yeast is capped. That fermentation time is very short for this temperature."
       );
     }
-    yeastPercent = base * conv * saltRetardationFactor(inputs.saltPercent);
+    yeastPercent = limited * conv * saltRetardationFactor(inputs.saltPercent);
     yeastDosePercent = yeastPercent;
   }
 

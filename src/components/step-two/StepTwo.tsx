@@ -5,7 +5,11 @@ import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
-import { BIGA_SCHEDULE, POOLISH_SCHEDULE } from "@/constants/dough";
+import {
+  BIGA_SCHEDULE,
+  POOLISH_SCHEDULE,
+  SOURDOUGH_COLD_HANDLING,
+} from "@/constants/dough";
 import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
 import {
   buildSchedule,
@@ -145,7 +149,7 @@ export function StepTwo() {
               {!inputs.coldFerment
                 ? "The whole time on the counter, from the end of mixing to the oven."
                 : inputs.leavening === "sourdough"
-                ? "The pre-fridge bulk with its stretch and folds, plus the hours out of the fridge before baking. The fridge stage below is on top of this. A sourdough usually wants 6–9 hours here: about 3 to bulk and 3–6 to come back to room temperature."
+                ? `The pre-fridge bulk with its stretch and folds, plus the hours out of the fridge before baking. The fridge stage below is on top of this. A sourdough usually wants ${SOURDOUGH_COLD_HANDLING.ambientRangeH[0]}–${SOURDOUGH_COLD_HANDLING.ambientRangeH[1]} hours here: about ${SOURDOUGH_COLD_HANDLING.bulkTargetH} to bulk and ${SOURDOUGH_COLD_HANDLING.temperRangeH[0]}–${SOURDOUGH_COLD_HANDLING.temperRangeH[1]} to come back to room temperature.`
                 : "The pre-fridge bulk rest plus the post-fridge temper and ball proof. The fridge stage below is on top of this. With a cold ferment, 1–3 hours is usually all you want."}
             </p>
             {ambientWarnings.map((w) => (
@@ -202,6 +206,11 @@ export function StepTwo() {
               onChange={(v) => updateInputs({ coldTempC: fromDisplay(v) })}
               formatValue={(v) => `${Math.round(v)}°${tempUnit}`}
             />
+            <p className="mt-3 text-xs text-text-muted">
+              Worth measuring rather than guessing: most home fridges run warmer
+              than people think, averaging around 6°C, and a couple of degrees
+              here changes how much starter the dough needs.
+            </p>
           </div>
         )}
       </section>
