@@ -4,10 +4,11 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  DEFAULT_SOURDOUGH_PRESET_ID,
-  SOURDOUGH_SCHEDULE_PRESETS,
+  RECOMMENDED_SCHEDULE,
+  SCHEDULE_PRESETS,
   STYLES,
   SchedulePreset,
+  scheduleFamily,
 } from "@/constants/dough";
 import { clamp, doughballWeightFromSize, resolveFormula } from "./calculations";
 import { LeaveningType, SettingsState, WizardInputs } from "@/types";
@@ -41,9 +42,12 @@ const defaultInputs: WizardInputs = {
   sugarPercent: STYLES.neapolitan.defaultSugar,
   leavening: "idy",
   sourdoughPercent: 15,
-  fermentationHours: 12,
+  // The commercial "Overnight cold" recommendation (RECOMMENDED_SCHEDULE), so a
+  // fresh load already sits on a preset. Its dose is the one anchored to
+  // published practice; the room-temperature dose is still an open question.
+  fermentationHours: 3,
   roomTempC: 21,
-  coldFerment: false,
+  coldFerment: true,
   coldHours: 24,
   // Not 4 C. A survey of ~10,000 European household fridges put the average at
   // 6.4 C, and the dose is sensitive to this: at a true 6.4 C a schedule entered
@@ -193,13 +197,24 @@ export function schedulePresetPatch(preset: SchedulePreset): Partial<WizardInput
   };
 }
 
+/** The one-tap schedules offered for a leavening method. */
+export function schedulePresetsFor(leavening: LeaveningType): SchedulePreset[] {
+  return SCHEDULE_PRESETS[scheduleFamily(leavening)];
+}
+
+/** The schedule a method starts on, and that "Reset to recommended" restores. */
+export function recommendedSchedule(leavening: LeaveningType): SchedulePreset {
+  const family = scheduleFamily(leavening);
+  return SCHEDULE_PRESETS[family].find((p) => p.id === RECOMMENDED_SCHEDULE[family])!;
+}
+
 /**
  * The preset the current schedule matches, if any. The fridge duration only
  * counts when there is a fridge stage, so a same-day schedule stays matched
  * whatever the hidden cold slider happens to hold.
  */
 export function activeSchedulePreset(inputs: WizardInputs): SchedulePreset | undefined {
-  return SOURDOUGH_SCHEDULE_PRESETS.find(
+  return schedulePresetsFor(inputs.leavening).find(
     (p) =>
       p.fermentationHours === inputs.fermentationHours &&
       p.coldFerment === inputs.coldFerment &&
@@ -208,22 +223,23 @@ export function activeSchedulePreset(inputs: WizardInputs): SchedulePreset | und
 }
 
 /**
- * What choosing a leavening method changes. Switching *into* sourdough starts
- * the baker on the default preset, since almost every published sourdough pizza
- * runs a cold stage; after that the schedule is theirs. Lives here rather than
- * in `sanitize`, so a shared link or a reload keeps exactly the schedule it had.
+ * What choosing a leavening method changes. The three commercial yeasts share
+ * a schedule, so switching between them changes nothing else. Moving to a
+ * different kind of method starts on that method's recommendation, because the
+ * same hours mean different things to a levain and to a poolish's final dough -
+ * but only while the schedule is still one of the presets. A schedule the baker
+ * has set by hand matches no preset and is never touched. Lives here rather than in `sanitize`, so a
+ * shared link or a reload keeps exactly the schedule it had.
  */
 export function leaveningPatch(
   current: WizardInputs,
   next: LeaveningType
 ): Partial<WizardInputs> {
-  if (next !== "sourdough" || current.leavening === "sourdough") {
+  if (scheduleFamily(next) === scheduleFamily(current.leavening)) {
     return { leavening: next };
   }
-  const preset = SOURDOUGH_SCHEDULE_PRESETS.find(
-    (p) => p.id === DEFAULT_SOURDOUGH_PRESET_ID
-  )!;
-  return { leavening: next, ...schedulePresetPatch(preset) };
+  if (!activeSchedulePreset(current)) return { leavening: next };
+  return { leavening: next, ...schedulePresetPatch(recommendedSchedule(next)) };
 }
 
 export { defaultInputs };

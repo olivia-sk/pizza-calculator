@@ -299,7 +299,7 @@ export const SOURDOUGH_COLD_HANDLING = {
   temperRangeH: [3, 6],
 } as const;
 
-/** A one-tap sourdough schedule: the shape of a published method. */
+/** A one-tap fermentation schedule: the shape of a published method. */
 export interface SchedulePreset {
   id: string;
   label: string;
@@ -309,29 +309,74 @@ export interface SchedulePreset {
 }
 
 /**
- * Starting points for a sourdough schedule, one per published school, so a
- * baker picks a method rather than guessing three sliders. They set the
- * schedule's shape only. Room and fridge temperature describe the baker's own
- * kitchen and are never overwritten, and the starter dose still comes from
- * STARTER_MODEL, so everything stays editable afterwards.
- *
- *   same-day  8 h at room temperature, no fridge     (the 8 h @ 21 C anchor)
- *   strgar    7 h ambient (~3 h bulk + ~4 h temper) + 16 h fridge: Rene
- *             Strgar's 24-30 h method, inside SOURDOUGH_COLD_HANDLING's range
- *   two-day   10 h ambient (bulk to completion, then a 6 h temper) + 48 h
- *             fridge: Leopard Crust's 24 C variant. Their 18 C variant runs
- *             16 h ambient, but at 21 C that much counter time plus 48 h in a
- *             6 C fridge crosses the protease caution tier, so the warm-kitchen
- *             shape is the one offered.
+ * Methods that share a schedule. The three commercial yeasts differ only in
+ * dose, so switching between them keeps the baker's schedule.
  */
-export const SOURDOUGH_SCHEDULE_PRESETS: SchedulePreset[] = [
-  { id: "same-day", label: "Same day", fermentationHours: 8, coldFerment: false, coldHours: 24 },
-  { id: "strgar", label: "Overnight cold", fermentationHours: 7, coldFerment: true, coldHours: 16 },
-  { id: "two-day", label: "Two-day cold", fermentationHours: 10, coldFerment: true, coldHours: 48 },
-];
+export type ScheduleFamily = "commercial" | "poolish" | "biga" | "sourdough";
 
-/** The preset applied when a baker switches to sourdough. */
-export const DEFAULT_SOURDOUGH_PRESET_ID = "strgar";
+export function scheduleFamily(leavening: LeaveningType): ScheduleFamily {
+  return leavening === "idy" || leavening === "ady" || leavening === "fresh"
+    ? "commercial"
+    : leavening;
+}
+
+/**
+ * One-tap schedules per method, so a baker picks a published shape rather than
+ * guessing two linked sliders. They set the schedule's shape only: room and
+ * fridge temperature describe the baker's own kitchen and are never
+ * overwritten, the dose still comes from the fermentation model, and
+ * everything stays editable afterwards. For a poolish or biga they set the
+ * *final dough*; the preferment runs on its own declared window.
+ *
+ *   commercial  same-day 8 h                 The Pizza Craft 6-8 h
+ *               overnight 3 h + 24 h fridge  Lehmann 24 h (recommended: the
+ *               two-day 3 h + 48 h fridge    cold dose is anchored; the room
+ *                                            dose is the open 2-8x finding)
+ *   poolish     balls 6 h at room            1 h bulk + 4-6 h balls
+ *               overnight 3 h + 20 h fridge  Vito Iacopelli, Pala (recommended)
+ *   biga        6.5 h at room                1-2 h bulk + 4-6 h appretto
+ *                                            (recommended, the classic shape)
+ *               overnight 3 h + 24 h fridge
+ *   sourdough   same-day 8 h                 the 8 h @ 21 C anchor
+ *               overnight 7 h + 16 h fridge  Strgar 24-30 h (recommended)
+ *               two-day 10 h + 48 h fridge   Leopard Crust's 24 C variant. Their
+ *                                            18 C variant runs 16 h ambient, but
+ *                                            at 21 C that plus 48 h in a 6 C
+ *                                            fridge crosses the protease caution
+ *                                            tier, so the warm-kitchen shape is
+ *                                            the one offered.
+ *
+ * The audit sweep holds every preset to no warn-tone guardrail across styles,
+ * 18-24 C kitchens and 3-7 C fridges. If one ever trips, fix the preset.
+ */
+export const SCHEDULE_PRESETS: Record<ScheduleFamily, SchedulePreset[]> = {
+  commercial: [
+    { id: "same-day", label: "Same day", fermentationHours: 8, coldFerment: false, coldHours: 24 },
+    { id: "overnight", label: "Overnight cold", fermentationHours: 3, coldFerment: true, coldHours: 24 },
+    { id: "two-day", label: "Two-day cold", fermentationHours: 3, coldFerment: true, coldHours: 48 },
+  ],
+  poolish: [
+    { id: "same-day", label: "Same day", fermentationHours: 6, coldFerment: false, coldHours: 24 },
+    { id: "overnight", label: "Overnight cold", fermentationHours: 3, coldFerment: true, coldHours: 20 },
+  ],
+  biga: [
+    { id: "same-day", label: "Same day", fermentationHours: 6.5, coldFerment: false, coldHours: 24 },
+    { id: "overnight", label: "Overnight cold", fermentationHours: 3, coldFerment: true, coldHours: 24 },
+  ],
+  sourdough: [
+    { id: "same-day", label: "Same day", fermentationHours: 8, coldFerment: false, coldHours: 24 },
+    { id: "overnight", label: "Overnight cold", fermentationHours: 7, coldFerment: true, coldHours: 16 },
+    { id: "two-day", label: "Two-day cold", fermentationHours: 10, coldFerment: true, coldHours: 48 },
+  ],
+};
+
+/** The preset each method starts on, and that "Reset to recommended" restores. */
+export const RECOMMENDED_SCHEDULE: Record<ScheduleFamily, string> = {
+  commercial: "overnight",
+  poolish: "overnight",
+  biga: "same-day",
+  sourdough: "overnight",
+};
 
 /** A doughball needs roughly this long out of the fridge to reach room temp. */
 export const MIN_TEMPER_H = 1.5;

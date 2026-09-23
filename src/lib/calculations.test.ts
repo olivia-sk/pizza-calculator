@@ -38,8 +38,16 @@ const LEAVENINGS: LeaveningType[] = [
   "biga",
 ];
 
+/**
+ * The schedule these tests were written against: 12 h at room temperature, no
+ * fridge. Pinned rather than taken from the store, whose default is now the
+ * recommended overnight cold ferment, so every expectation here states its
+ * schedule instead of inheriting whatever the app happens to open on.
+ */
+const TEST_SCHEDULE: Partial<WizardInputs> = { fermentationHours: 12, coldFerment: false };
+
 function inputs(overrides: Partial<WizardInputs> = {}): WizardInputs {
-  return { ...defaultInputs, ...overrides };
+  return { ...defaultInputs, ...TEST_SCHEDULE, ...overrides };
 }
 
 /**

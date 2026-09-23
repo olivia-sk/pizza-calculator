@@ -1,21 +1,25 @@
 "use client";
 
-import { ChevronLeft } from "lucide-react";
+import { ChevronLeft, RotateCcw } from "lucide-react";
 import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
-import { pillClassName } from "@/components/preset-pills/PresetPills";
+import {
+  RESET_PILL_CLASS,
+  pillClassName,
+} from "@/components/preset-pills/PresetPills";
 import {
   BIGA_SCHEDULE,
   POOLISH_SCHEDULE,
   SOURDOUGH_COLD_HANDLING,
-  SOURDOUGH_SCHEDULE_PRESETS,
 } from "@/constants/dough";
 import {
   LIMITS,
   activeSchedulePreset,
+  recommendedSchedule,
   schedulePresetPatch,
+  schedulePresetsFor,
   useRecipeInputs,
   useWizardStore,
 } from "@/lib/store";
@@ -53,6 +57,8 @@ export function StepTwo() {
   const isPoolish = inputs.leavening === "poolish";
   const isBiga = inputs.leavening === "biga";
   const hasPreferment = isPoolish || isBiga;
+  const activePreset = activeSchedulePreset(inputs);
+  const recommendedPreset = recommendedSchedule(inputs.leavening);
 
   // Warnings carry their own id and tone, so they are rendered wherever they
   // belong without matching on their wording. The two about the ambient budget
@@ -123,44 +129,68 @@ export function StepTwo() {
       )}
 
       {/*
-        One tap per published sourdough method, so the baker picks a shape rather
-        than guessing three sliders. It only moves the sliders below; the room and
-        fridge temperatures stay the baker's own, and nothing here is locked.
+        One tap per published schedule, so the baker picks a shape rather than
+        guessing two linked sliders - the same idea as the hydration presets. It
+        only moves the sliders below; the room and fridge temperatures stay the
+        baker's own, and nothing here is locked. Once the sliders leave every
+        preset, a reset pill offers the way back to the recommendation.
       */}
-      {inputs.leavening === "sourdough" && (
-        <section className="rounded-2xl border border-border bg-surface px-4 py-5">
-          <h2 className="text-sm font-medium text-text">Sourdough schedule</h2>
-          <p className="text-xs text-text-muted">
-            Start from a published method, then adjust anything below
-          </p>
-          <div
-            className="mt-3 flex flex-wrap gap-2"
-            role="group"
-            aria-label="Sourdough schedule presets"
-          >
-            {SOURDOUGH_SCHEDULE_PRESETS.map((preset) => {
-              const active = activeSchedulePreset(inputs)?.id === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => updateInputs(schedulePresetPatch(preset))}
-                  className={pillClassName(active)}
-                >
-                  <span className="font-bold">{preset.label}</span>
-                  <span className={active ? "text-white/80" : ""}>
-                    {formatHours(preset.fermentationHours)}
-                    {preset.coldFerment
-                      ? ` + ${formatHours(preset.coldHours)} cold`
-                      : ""}
+      <section className="rounded-2xl border border-border bg-surface px-4 py-5">
+        <h2 className="text-sm font-medium text-text">
+          {hasPreferment ? "Final dough schedule" : "Schedule"}
+        </h2>
+        <p className="text-xs text-text-muted">
+          Start from a published method, then adjust anything below
+        </p>
+        <div
+          className="mt-3 flex flex-wrap gap-2"
+          role="group"
+          aria-label="Schedule presets"
+        >
+          {schedulePresetsFor(inputs.leavening).map((preset) => {
+            const active = activePreset?.id === preset.id;
+            const recommended = preset.id === recommendedPreset.id;
+            return (
+              <button
+                key={preset.id}
+                type="button"
+                aria-pressed={active}
+                onClick={() => updateInputs(schedulePresetPatch(preset))}
+                className={pillClassName(active)}
+              >
+                <span className="font-bold">{preset.label}</span>
+                <span className={active ? "text-white/80" : ""}>
+                  {formatHours(preset.fermentationHours)}
+                  {preset.coldFerment
+                    ? ` + ${formatHours(preset.coldHours)} cold`
+                    : ""}
+                </span>
+                {recommended && (
+                  <span
+                    className={
+                      active
+                        ? "rounded-md bg-white/20 px-1.5 py-0.5 text-[10px] uppercase tracking-wide"
+                        : "rounded-md bg-accent-50 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent-700"
+                    }
+                  >
+                    Recommended
                   </span>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      )}
+                )}
+              </button>
+            );
+          })}
+          {!activePreset && (
+            <button
+              type="button"
+              onClick={() => updateInputs(schedulePresetPatch(recommendedPreset))}
+              className={RESET_PILL_CLASS}
+            >
+              <RotateCcw size={13} strokeWidth={2} aria-hidden="true" />
+              Reset to recommended
+            </button>
+          )}
+        </div>
+      </section>
 
       {/*
         The counter stage, built to the same shape as the fridge stage below: a

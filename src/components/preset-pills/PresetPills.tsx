@@ -19,6 +19,10 @@ interface PresetPillsProps {
 
 const EPSILON = 1e-6;
 
+/** The dashed pill that returns a control to its recommended value. */
+export const RESET_PILL_CLASS =
+  "flex min-h-[36px] items-center gap-1.5 rounded-xl border border-dashed border-border-strong px-3 text-xs font-medium text-text-muted transition-[background-color,transform] duration-150 hover:bg-surface-sunken active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-page";
+
 /** A preset pill's look, shared with any row of one-tap choices. */
 export function pillClassName(active: boolean): string {
   return cn(
@@ -75,7 +79,7 @@ export function PresetPills({
         <button
           type="button"
           onClick={() => onChange(styleDefault)}
-          className="flex min-h-[36px] items-center gap-1.5 rounded-xl border border-dashed border-border-strong px-3 text-xs font-medium text-text-muted transition-[background-color,transform] duration-150 hover:bg-surface-sunken active:scale-[0.96] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-page"
+          className={RESET_PILL_CLASS}
         >
           <RotateCcw size={13} strokeWidth={2} aria-hidden="true" />
           Reset to style
