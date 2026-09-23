@@ -231,12 +231,8 @@ describe("input space audit", () => {
     //
     // Non-increasing rather than strictly decreasing, so a future saturating
     // term in the cold stage does not fail this falsely.
-    // Pinned to a room-temperature schedule, as the store default was when
-    // this was written. With a fridge stage the room-temperature axis is not
-    // quite monotone - the levain's fold runs at k = 0.12 while its dose curve
-    // runs at k = 0.08, so warming the room can add up to ~0.7 points near the
-    // cap (1 h + 16 h @ 4 C, 15 -> 16 C). Known and open alongside the rest of
-    // the levain cold-ferment calibration; not fixed here.
+    // The base schedule is room-temperature only, as the store default was
+    // when this was written; the fridge-stage axes are swept explicitly below.
     const sd = {
       ...defaultInputs,
       leavening: "sourdough" as const,
@@ -284,6 +280,32 @@ describe("input space audit", () => {
             const v = starter({ ...cold, roomTempC: t });
             const label = `${fermentationHours}h + ${coldHours}h @${coldTempC}C, room ${t}C`;
             expect(v, label).toBeLessThanOrEqual(previous + 1e-9);
+            previous = v;
+          }
+        }
+      }
+    }
+
+    // Ambient time and fridge temperature with a fridge stage on, the two axes
+    // SHORT_BULK_STARTER_FLOOR adds: it fades out as the ambient budget grows
+    // into a long bulk, and only a warm fridge lowers it. Neither may ever ask
+    // for more starter as the dough gets more warm time.
+    for (const roomTempC of [15, 21, 28]) {
+      for (const coldHours of [1, 16, 48, LIMITS.coldHours.max]) {
+        for (const coldTempC of [LIMITS.coldTempC.min, 5, 8, LIMITS.coldTempC.max]) {
+          const cold = { ...sd, coldFerment: true, roomTempC, coldHours, coldTempC };
+          previous = Infinity;
+          for (let h = 1; h <= LIMITS.fermentationHours.max; h += 0.25) {
+            const v = starter({ ...cold, fermentationHours: h });
+            expect(v, `ambient ${h}h + ${coldHours}h @${coldTempC}C, room ${roomTempC}C`).toBeLessThanOrEqual(previous + 1e-9);
+            previous = v;
+          }
+        }
+        for (const fermentationHours of [3, 7, 12, 16]) {
+          previous = Infinity;
+          for (let t = LIMITS.coldTempC.min; t <= LIMITS.coldTempC.max; t += 1) {
+            const v = starter({ ...sd, coldFerment: true, roomTempC, coldHours, fermentationHours, coldTempC: t });
+            expect(v, `${fermentationHours}h + ${coldHours}h, fridge ${t}C, room ${roomTempC}C`).toBeLessThanOrEqual(previous + 1e-9);
             previous = v;
           }
         }

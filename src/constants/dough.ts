@@ -339,12 +339,13 @@ export function scheduleFamily(leavening: LeaveningType): ScheduleFamily {
  *               overnight 3 h + 24 h fridge
  *   sourdough   same-day 8 h                 the 8 h @ 21 C anchor
  *               overnight 7 h + 16 h fridge  Strgar 24-30 h (recommended)
- *               two-day 10 h + 48 h fridge   Leopard Crust's 24 C variant. Their
- *                                            18 C variant runs 16 h ambient, but
- *                                            at 21 C that plus 48 h in a 6 C
- *                                            fridge crosses the protease caution
- *                                            tier, so the warm-kitchen shape is
- *                                            the one offered.
+ *               two-day 10 h + 48 h fridge   a 4 h bulk and a 6 h temper around a
+ *                                            two-day hold, the short-bulk shape
+ *                                            Sourdough Etc. runs at 48-72 h.
+ *                                            Leopard Crust's 16 h counter version
+ *                                            plus 48 h in a 6 C fridge crosses the
+ *                                            protease caution tier at 21 C, so it
+ *                                            is not offered.
  *
  * The audit sweep holds every preset to no warn-tone guardrail across styles,
  * 18-24 C kitchens and 3-7 C fridges. If one ever trips, fix the preset.
@@ -434,20 +435,20 @@ export const POOLISH_MODEL = {
  * treats the fridge as a hold; Strgar bulks briefly and lets the fridge do the
  * work. C = 120 is a deliberate midpoint between them, not a fitted constant.
  *
- * Measured against published doses, the curve lands within ~20% on the
- * bulk-to-completion schedules and under-reads the short-bulk/long-fridge shape
- * badly:
+ * Measured against published doses, the curve alone lands within ~30% on the
+ * bulk-to-completion schedules and under-reads the short-bulk shape badly
+ * (Leopard Crust entered as it runs: a 9 h bulk plus a 6-8 h temper, ~16 h on
+ * the counter at 18 C):
  *
- *   Leopard Crust 48 h    actual  7.5%  ->  9.0%  (+20%)
- *   Leopard Crust 72 h    actual  7.5%  ->  7.3%   (-3%)
- *   classic 4 h + 24 h    actual 15.0%  -> 16.9%  (+12%)
- *   Strgar 24-30 h        actual 20.0%  -> 12.4%  (-38%)   <- worst fit
+ *   Leopard Crust 48 h    actual  7.5%  ->  6.4%  (-15%)
+ *   Leopard Crust 72 h    actual  7.5%  ->  5.5%  (-27%)
+ *   Strgar 24-30 h        actual 20.5%  -> 12.4%  (-40%)   <- worst fit
  *
  * That last row is the curve alone. SOURDOUGH_METHOD below names Strgar and the
  * schedule builder generates his short-bulk shape, but the curve doses it
  * Leopard-style. Raising C to chase it would move every other schedule, so the
- * overnight school gets its own floor instead (OVERNIGHT_STARTER_FLOOR), which
- * brings Strgar to within ~1% and leaves the rows above on this curve. Treat any
+ * short-bulk school gets its own floor instead (SHORT_BULK_STARTER_FLOOR),
+ * which brings Strgar to within ~5% and leaves long-bulk schedules on this curve. Treat any
  * suggestion here as a starting point with real uncertainty, not a solved number.
  *
  * n = 1 (plain 1/t) and k = 0.08 are carried over from YEAST_MODEL. Note k is
@@ -504,45 +505,48 @@ export const POOLISH_SCHEDULE = {
 export const PREFERMENT_MAIN_DOUGH_EQ_H = { short: 4, long: 18 } as const;
 
 /**
- * The least starter an overnight cold ferment wants, as a percentage of total
+ * The least starter a short-bulk cold ferment wants, as a percentage of total
  * flour before the salt correction:
  *
- *   floor = percentHours / max(coldHours, minColdH) * exp(k * (refColdTempC - Tc))
+ *   floor = percent * min(1, exp(k * (refColdTempC - Tc))) * taper(ambient)
  *
  * with k the levain's COLD_DECAY_K. The suggestion is the greater of this and
  * STARTER_MODEL's curve, so it is a floor, not a replacement.
  *
- * Why it exists. The published sourdough pizza methods are two schools
- * (STARTER_MODEL's docstring). Leopard Crust uses little starter and bulks to
- * completion before a multi-day fridge stage; Strgar and similar overnight
- * methods use a lot of starter, bulk briefly and bake the next day. The curve
- * fits the first school and read the second 38-53% low, so the app's own
- * overnight preset (7 h + 16 h) came out at 13% against ~20% published. Moving
- * the levain's cold k cannot fix that - it made the mean error across the cold
- * anchors worse, 31% -> 50%, while barely moving Strgar - because the misses are
- * by method, not by fridge constant.
+ * What sets a sourdough pizza's starter is how long the dough ferments *warm*,
+ * not how long it sits in the fridge. At 3-5 C a levain nearly stops (33 h at
+ * 4 C counts for ~4 room-temperature hours), so recipes that bulk briefly and
+ * chill use about the same starter however long the fridge stage runs:
  *
- * The overnight anchors, as this app counts a starter (100% hydration, percent
- * of total flour), sit on one reciprocal in fridge hours:
+ *   Rene Strgar     3 h bulk @ 24 C, ~16 h @ 5 C, 3-6 h temper     20.5%
+ *   Sourdough Etc.  a few hours' bulk, 48-72 h in the fridge       ~19%
+ *   SomebodyFeedSeb 8 h room, 12-24 h fridge                        18.2%
  *
- *   Rene Strgar      3 h bulk + ~16 h @ 5 C + 3-6 h temper  20.5%  -> 328
- *   SomebodyFeedSeb  8 h room + 12-24 h @ ~4 C + 4-5 h       18.2%  -> 291
- *                    (Strgar's 200 g of a 75% starter per kg flour converts to
- *                     20.5%; both backed out to base salt and a 5 C fridge)
+ * (as this app counts a starter: 100% hydration, percent of total flour.
+ * Strgar's 200 g of a 75% starter per kg flour converts to 20.5%.) The curve
+ * alone read these 38-53% low, because its schedule clock credits the fridge
+ * with work it barely does. An earlier floor that fell as 1 / fridge hours had
+ * the same flaw: it was fitted to two recipes at nearly the same fridge time,
+ * so the data never supported the slope, and it gave a short-bulk 48 h dough
+ * ~6% against ~19% published.
  *
- * percentHours is their geometric mean, 310, which lands each within ~6%.
- * Longer fridge stages fall under the curve and are untouched: Leopard Crust
- * 48 h -> floor 7.3% against the curve's 9.4%, 72 h -> 4.8% against 7.6%, and
- * the classic 4 h + 24 h -> 14.5% against 17.7%.
+ * Recipes with a long warm bulk before the fridge are another school (Leopard
+ * Crust bulks ~9 h to completion and uses 5-10% for 48 h and 72 h alike), and
+ * the sources there disagree by 2x or more - SomebodyFeedSeb's long room stage
+ * uses 18%. So the floor tapers away as the ambient budget grows past the
+ * short-bulk range (SOURDOUGH_COLD_HANDLING: up to 9 h, where the schedule
+ * builder's bulk stops at 3 h) and is gone by maxAmbientH, leaving those
+ * schedules on the curve. Where the sources disagree, lower is the safer side:
+ * the workflow tells the baker to wait for a 30-40% rise, and an under-dosed
+ * dough can be given time, while an over-dosed one cannot be taken back.
  *
- * minColdH stops the reciprocal running away on a short chill. It is the
- * shortest fridge stage in the anchors, so the floor never extrapolates below
- * the data: anything shorter is held at the 16 h value, which keeps the
- * suggestion non-increasing in fridge time.
+ * Only a fridge warmer than refColdTempC lowers the floor. A warm fridge does
+ * real fermenting; a colder one than 5 C barely differs from 5 C, so it does not
+ * raise it. Unverified against it: STARTER_MODEL's "classic 4 h + 24 h -> 15%"
+ * row, which has no traceable source and sits below every recipe above.
  */
-export const OVERNIGHT_STARTER_FLOOR = {
-  percentHours: 310,
-  minColdH: 16,
+export const SHORT_BULK_STARTER_FLOOR = {
+  percent: 20,
   refColdTempC: 5,
 } as const;
 

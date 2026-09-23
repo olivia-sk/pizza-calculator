@@ -755,18 +755,21 @@ describe("suggested sourdough starter", () => {
       ["app default 12 h @ 21 C", { fermentationHours: 12 }, 10.5],
       ["8 h @ 21 C", { fermentationHours: 8 }, 15.7],
       ["same-day 4 h @ 24 C", { fermentationHours: 4, roomTempC: 24 }, 24.7],
+      // A short-bulk cold ferment, so it sits on SHORT_BULK_STARTER_FLOOR
+      // (20% at base salt). The 15% once quoted for it has no traceable source
+      // and sits below every short-bulk recipe that does.
       [
         "classic 4 h + 24 h @ 4 C",
         { fermentationHours: 4, coldFerment: true, coldHours: 24, coldTempC: 4 },
-        17.7,
+        21,
       ],
-      // Was 8.9 while the fridge stage was folded to room temperature; folding
-      // it straight to 21 C stops a cool 18 C kitchen from inflating the fridge's
-      // share. Published 5-10% (7.5% used), so still inside the band.
+      // Entered as the recipe runs: a 9 h bulk plus a 6-8 h temper is ~16 h on
+      // the counter, not the 9 h this row used to read. A long warm bulk, so the
+      // curve alone. Published 5-10%.
       [
-        "Leopard Crust 9 h @ 18 C + 48 h @ 4 C",
-        { fermentationHours: 9, roomTempC: 18, coldFerment: true, coldHours: 48, coldTempC: 4 },
-        9.4,
+        "Leopard Crust 9 h bulk + 7 h temper @ 18 C, 48 h @ 4 C",
+        { fermentationHours: 16, roomTempC: 18, coldFerment: true, coldHours: 48, coldTempC: 4 },
+        6.4,
       ],
     ];
     for (const [label, o, expected] of anchors) {
@@ -774,19 +777,19 @@ describe("suggested sourdough starter", () => {
     }
   });
 
-  it("does not let a long cold ferment read as a short one", () => {
-    // The regression. A real bake ran 6 h ambient plus a 33 h cold ferment at
-    // 4 C, was given ~11.7% starter, and came out of the fridge flat and
-    // structureless. The dose itself is within the (very wide) band of
-    // published practice, so what is pinned here is the *ordering*: a 33 h cold
-    // ferment must ask for less starter than a 24 h one and more than a 48 h
-    // one. That survives a recalibration; a bare literal would not.
+  it("does not starve a short bulk because the fridge stage is long", () => {
+    // The regression. A real bake ran 6 h ambient (a 2.4 h bulk) plus a 33 h
+    // cold ferment at 4 C, was given ~12% starter, and came out of the fridge
+    // flat and gummy. A levain barely works at 4 C, so short-bulk recipes use
+    // ~20% whether the fridge runs 16 h or 72 h; the old curve read 33 h of
+    // fridge as a reason to cut the starter nearly in half. Pinned as a shape:
+    // never more starter for a longer fridge stage, and no drop for one either.
     const cold = (coldHours: number) =>
       suggest({ fermentationHours: 6, coldFerment: true, coldHours, coldTempC: 4 });
 
-    expect(cold(33)).toBeLessThan(cold(24));
-    expect(cold(33)).toBeGreaterThan(cold(48));
-    expect(cold(33)).toBeCloseTo(12.2, 0);
+    expect(cold(33)).toBeLessThanOrEqual(cold(24));
+    expect(cold(72)).toBe(cold(16));
+    expect(cold(33)).toBeGreaterThanOrEqual(18);
   });
 
   it("reports both ends of the band instead of clamping silently", () => {
@@ -1097,14 +1100,14 @@ describe("neapolitan: every method against published schedules", () => {
     ["poolish, balls 4-6 h at room", "poolish", { fermentationHours: 6 }, 0.32, 0.57],
     ["classic biga 18 h @ 18 C, 6.5 h at room", "biga", { fermentationHours: 6.5 }, 0.33, 0.33],
     ["biga, 3 h + 24 h fridge", "biga", { fermentationHours: 3, ...cold(24) }, 0.33, 0.33],
-    ["Leopard Crust 9 h @ 18 C + 48 h @ 4 C", "sourdough", { fermentationHours: 9, roomTempC: 18, ...cold(48) }, 5, 10],
-    ["Leopard Crust 9 h @ 18 C + 72 h @ 4 C", "sourdough", { fermentationHours: 9, roomTempC: 18, ...cold(72) }, 5, 10],
+    // A 9 h bulk plus a 6-8 h temper: ~16 h on the counter.
+    ["Leopard Crust 16 h @ 18 C + 48 h @ 4 C", "sourdough", { fermentationHours: 16, roomTempC: 18, ...cold(48) }, 5, 10],
+    ["Leopard Crust 16 h @ 18 C + 72 h @ 4 C", "sourdough", { fermentationHours: 16, roomTempC: 18, ...cold(72) }, 5, 10],
     ["classic sourdough 4 h + 24 h @ 4 C", "sourdough", { fermentationHours: 4, ...cold(24) }, 15, 15],
-    // The overnight school, set by OVERNIGHT_STARTER_FLOOR. Strgar's 200 g of a
-    // 75% starter per kg flour is 20.5% as this app counts a starter.
+    // The short-bulk school, set by SHORT_BULK_STARTER_FLOOR. Strgar's 200 g of
+    // a 75% starter per kg flour is 20.5% as this app counts a starter.
     ["Strgar 3 h bulk @ 24 C + 16 h @ 5 C + 4.5 h", "sourdough", { fermentationHours: 7.5, roomTempC: 24, ...cold(16, 5) }, 20.5, 20.5],
-    ["SomebodyFeedSeb 8 h + 18 h @ 4 C + 4.5 h", "sourdough", { fermentationHours: 12.5, ...cold(18) }, 18.2, 18.2],
-    ["Leopard Crust 6 h @ 24 C + 48 h", "sourdough", { fermentationHours: 10, roomTempC: 24, ...cold(48) }, 10, 10],
+    ["Sourdough Etc. ~5 h + 60 h @ 4 C", "sourdough", { fermentationHours: 5, ...cold(60) }, 19.4, 19.4],
   ];
 
   it("lands every cold, preferment and sourdough schedule inside the source spread", () => {
@@ -1119,7 +1122,7 @@ describe("neapolitan: every method against published schedules", () => {
     // 9 h bulk, and reads 38 protease-hours against a 36 h caution tier. That
     // tier is calibrated to practice (PROTEOLYTIC_TOLERANCE_H) and is not
     // retuned for one row; "handles softer than usual" is a fair description.
-    const EDGE = "Leopard Crust 9 h @ 18 C + 72 h @ 4 C";
+    const EDGE = "Leopard Crust 16 h @ 18 C + 72 h @ 4 C";
     for (const [label, lv, o] of WITHIN_SPREAD) {
       const warned = run(lv, o).warnings.filter((w) => w.tone === "warn").map((w) => w.id);
       expect(warned, label).toEqual(label === EDGE ? ["overferment-caution"] : []);
@@ -1159,10 +1162,10 @@ describe("neapolitan: every method against published schedules", () => {
   });
 });
 
-describe("overnight sourdough floor", () => {
+describe("short-bulk sourdough floor", () => {
   const starter = (o: Partial<WizardInputs>) =>
     resolveFormula(inputs({ leavening: "sourdough", ...o }), false).sourdoughPercent;
-  const withoutFloor = (o: Partial<WizardInputs>) => {
+  const curveOnly = (o: Partial<WizardInputs>) => {
     const i = inputs({ leavening: "sourdough", ...o });
     return suggestedStarterPercent(
       starterEquivalentHours(i),
@@ -1171,29 +1174,39 @@ describe("overnight sourdough floor", () => {
     );
   };
 
-  it("doses the overnight school the way its recipes do", () => {
-    // Before the floor, the curve read these 38-53% low, and the app's own
-    // overnight preset came out at 13%.
+  it("doses short-bulk recipes the way they do, however long the fridge", () => {
+    // Before the floor, the curve read these 38-53% low.
     for (const [label, o, published] of [
       ["Strgar", { fermentationHours: 7.5, roomTempC: 24, coldFerment: true, coldHours: 16, coldTempC: 5 }, 20.5],
-      ["SomebodyFeedSeb", { fermentationHours: 12.5, coldFerment: true, coldHours: 18, coldTempC: 4 }, 18.2],
+      ["Sourdough Etc.", { fermentationHours: 5, coldFerment: true, coldHours: 60, coldTempC: 4 }, 19.4],
     ] as const) {
       expect(Math.abs(starter(o) / published - 1), label).toBeLessThan(0.15);
     }
-    expect(
-      starter({ fermentationHours: 7, coldFerment: true, coldHours: 16, coldTempC: 6 })
-    ).toBeGreaterThanOrEqual(17);
+    const shortBulk = (coldHours: number) =>
+      starter({ fermentationHours: 7, coldFerment: true, coldHours, coldTempC: 5 });
+    expect(shortBulk(16)).toBe(shortBulk(48));
+    expect(shortBulk(48)).toBe(shortBulk(96));
   });
 
-  it("leaves the long-fridge school and room-temperature doughs on the curve", () => {
+  it("only lets a warm fridge lower it", () => {
+    const at = (coldTempC: number) =>
+      starter({ fermentationHours: 7, coldFerment: true, coldHours: 24, coldTempC });
+    expect(at(1)).toBe(at(5));
+    expect(at(8)).toBeLessThan(at(5));
+    expect(at(10)).toBeLessThan(at(8));
+  });
+
+  it("leaves long warm bulks and room-temperature doughs on the curve", () => {
+    // Where the sources disagree by 2x (Leopard Crust 7.5% vs SomebodyFeedSeb
+    // 18% for a long room stage), the lower curve stands: a slow dough can be
+    // given time, an over-dosed one cannot be taken back.
     for (const o of [
-      { fermentationHours: 9, roomTempC: 18, coldFerment: true, coldHours: 48, coldTempC: 4 },
-      { fermentationHours: 9, roomTempC: 18, coldFerment: true, coldHours: 72, coldTempC: 4 },
-      { fermentationHours: 4, coldFerment: true, coldHours: 24, coldTempC: 4 },
-      { fermentationHours: 6, coldFerment: true, coldHours: 33, coldTempC: 4 },
+      { fermentationHours: 16, roomTempC: 18, coldFerment: true, coldHours: 48, coldTempC: 4 },
+      { fermentationHours: 16, roomTempC: 18, coldFerment: true, coldHours: 72, coldTempC: 4 },
       { fermentationHours: 8, coldFerment: false },
+      { fermentationHours: 25, coldFerment: false },
     ]) {
-      expect(starter(o), JSON.stringify(o)).toBe(withoutFloor(o));
+      expect(starter(o), JSON.stringify(o)).toBe(curveOnly(o));
     }
   });
 });

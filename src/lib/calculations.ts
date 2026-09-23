@@ -9,7 +9,7 @@ import {
   MAX_AMBIENT_WITH_COLD_H,
   MIN_TEMPER_H,
   MIN_WEIGHABLE_YEAST_G,
-  OVERNIGHT_STARTER_FLOOR,
+  SHORT_BULK_STARTER_FLOOR,
   POOLISH_FLOUR_FRACTION,
   POOLISH_HONEY_PERCENT,
   POOLISH_MODEL,
@@ -304,17 +304,20 @@ export function starterEquivalentHours(inputs: WizardInputs): number {
 }
 
 /**
- * The least starter an overnight cold ferment wants, before salt; 0 without a
- * fridge stage. See OVERNIGHT_STARTER_FLOOR for the anchors and the fit.
+ * The least starter a short-bulk cold ferment wants, before salt; 0 without a
+ * fridge stage. Flat in fridge time, lowered only by a warm fridge, and faded
+ * out as the ambient budget grows into a long warm bulk. See
+ * SHORT_BULK_STARTER_FLOOR for the recipes and why.
  */
-export function overnightStarterFloor(inputs: WizardInputs): number {
+export function shortBulkStarterFloor(inputs: WizardInputs): number {
   if (!inputs.coldFerment) return 0;
-  const { percentHours, minColdH, refColdTempC } = OVERNIGHT_STARTER_FLOOR;
+  const { percent, refColdTempC } = SHORT_BULK_STARTER_FLOOR;
   const T = Number.isFinite(inputs.coldTempC) ? inputs.coldTempC : refColdTempC;
-  return (
-    (percentHours / Math.max(inputs.coldHours, minColdH)) *
-    Math.exp(COLD_DECAY_K.sourdough * (refColdTempC - T))
-  );
+  const fridge = Math.min(1, Math.exp(COLD_DECAY_K.sourdough * (refColdTempC - T)));
+  const from = SOURDOUGH_COLD_HANDLING.ambientRangeH[1];
+  const to = SOURDOUGH_COLD_HANDLING.maxAmbientH;
+  const longBulk = clamp((inputs.fermentationHours - from) / (to - from), 0, 1);
+  return percent * fridge * (1 - longBulk);
 }
 
 /**
@@ -390,7 +393,7 @@ export function resolveFormula(
       starterEquivalentHours(inputs),
       STARTER_MODEL.refTempC,
       resolved.saltPercent,
-      overnightStarterFloor(inputs)
+      shortBulkStarterFloor(inputs)
     );
   }
   return resolved;
@@ -573,7 +576,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       starterEquivalentHours(inputs),
       STARTER_MODEL.refTempC,
       undefined,
-      overnightStarterFloor(inputs)
+      shortBulkStarterFloor(inputs)
     );
     if (suggested >= STARTER_MODEL.maxPercent - 1e-9) {
       warnings.add(
