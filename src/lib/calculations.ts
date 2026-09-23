@@ -4,7 +4,6 @@ import {
   BIGA_MODEL,
   BIGA_SCHEDULE,
   COLD_DECAY_K,
-  COMMERCIAL_COLD_DOSE,
   GRAMS_PER_OUNCE,
   MAX_AMBIENT_WITH_COLD_H,
   MIN_TEMPER_H,
@@ -128,23 +127,6 @@ export function calcIdyPercent(hours: number, roomTempC: number): number {
 }
 
 /**
- * The most yeast a fridge stage of this length tolerates, as a percentage of
- * total flour. Lehmann's schedule multipliers against the room-temperature
- * reference dose; see COMMERCIAL_COLD_DOSE for the fit, and for why the fused
- * clock cannot express this.
- */
-export function coldDoseCeiling(inputs: WizardInputs): number {
-  const { referenceRoomH, coldHourConstant } = COMMERCIAL_COLD_DOSE;
-  const reference = calcIdyPercent(referenceRoomH, inputs.roomTempC);
-  const hours = Math.max(inputs.coldHours, 0.25);
-  return clamp(
-    reference * (coldHourConstant / hours),
-    YEAST_MODEL.minPercent,
-    YEAST_MODEL.maxPercent
-  );
-}
-
-/**
  * Instant dry yeast, percent of the *poolish* flour, for the preferment.
  * Deliberately not salt-corrected: a poolish is unsalted, so the salt in the
  * final dough never reaches the yeast during the preferment's own rise.
@@ -196,12 +178,13 @@ export interface Stage {
  *
  *   t_eq(Tref) = sum_i  t_i * exp(k * (T_i - Tref))
  *
- * `k` selects which clock is being read. The yeast clock uses COLD_DECAY_K
- * (0.08 commercial, a Q10 of ~2.2; 0.12 for a levain, because wild yeast and LAB
- * shut down harder in the fridge than S. cerevisiae does). The protease clock
- * uses the much flatter PROTEOLYSIS_K. At 4 C in a 21 C kitchen one fridge hour
- * counts as e^(0.08*-17) ~ 0.26 yeast-hours but e^(0.05*-17) ~ 0.43
- * protease-hours, which is precisely why cutting the dose cannot buy unlimited
+ * `k` selects which clock is being read. The yeast clock's fridge arm uses
+ * COLD_DECAY_K (0.105 commercial, fitted to published cold-ferment doses; 0.12
+ * for a levain, because wild yeast and LAB shut down harder in the fridge than
+ * S. cerevisiae does). The protease clock uses the much flatter PROTEOLYSIS_K.
+ * At 4 C one fridge hour counts as e^(0.105*-17) ~ 0.17 yeast-hours at 21 C but
+ * e^(0.05*-17) ~ 0.43 protease-hours, which is precisely why cutting the dose
+ * cannot buy unlimited
  * time: the gluten keeps degrading on a clock the yeast dose has no say over.
  *
  * Continuous in temperature with no piecewise branch, so sweeping the fridge
@@ -265,8 +248,9 @@ function mainDoughStages(inputs: WizardInputs): Stage[] {
 }
 
 /**
- * Room-temperature-equivalent hours for the *main dough*, which is what the
- * straight-dough yeast dose is solved against. Deliberately excludes any
+ * Room-temperature-equivalent hours for the *main dough*, folded to the room
+ * itself: a reading, no longer a dosing input. The straight-dough dose is solved
+ * against `commercialEquivalentHours` instead. Deliberately excludes any
  * preferment window: a preferment is inoculated separately, for its own
  * schedule, so folding its hours in here would double-count them.
  */
@@ -300,6 +284,26 @@ export function starterEquivalentHours(inputs: WizardInputs): number {
   return (
     equivalentHours([ambient], ref, STARTER_MODEL.k / STARTER_MODEL.n) +
     equivalentHours(cold, ref, COLD_DECAY_K.sourdough)
+  );
+}
+
+/**
+ * The main dough's schedule folded to 21 C for commercial yeast, which is what
+ * the straight-dough dose is solved against: evaluate `calcIdyPercent` at
+ * YEAST_MODEL.refTempC with this. The same shape as `starterEquivalentHours`,
+ * for the same reason - the ambient stage folds at the curve's own k / n, so a
+ * schedule without a fridge stage doses exactly as `dose` would at the room, and
+ * the fridge folds straight to the reference at COLD_DECAY_K.commercial, so a
+ * warmer kitchen can never shrink its share and raise the dose. One clock covers
+ * room and cold schedules alike; see COLD_DECAY_K for the fit that replaced the
+ * old Lehmann-multiplier ceiling.
+ */
+export function commercialEquivalentHours(inputs: WizardInputs): number {
+  const [ambient, ...cold] = mainDoughStages(inputs);
+  const ref = YEAST_MODEL.refTempC;
+  return (
+    equivalentHours([ambient], ref, YEAST_MODEL.k / YEAST_MODEL.n) +
+    equivalentHours(cold, ref, COLD_DECAY_K.commercial)
   );
 }
 
@@ -380,12 +384,9 @@ export function proteolyticParts(inputs: WizardInputs): {
  * A sourdough reads the clock its starter is solved on.
  */
 export function yeastHoursAt21(inputs: WizardInputs): number {
-  if (inputs.leavening === "sourdough") return starterEquivalentHours(inputs);
-  return equivalentHours(
-    mainDoughStages(inputs),
-    POOLISH_MODEL.refTempC,
-    COLD_DECAY_K.commercial
-  );
+  return inputs.leavening === "sourdough"
+    ? starterEquivalentHours(inputs)
+    : commercialEquivalentHours(inputs);
 }
 
 /**
@@ -591,7 +592,6 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
   const isBiga = inputs.leavening === "biga";
 
   const schedule = buildSchedule(inputs);
-  const effHours = schedule.effectiveHours;
 
   // --- Leavening dose -------------------------------------------------------
   let yeastPercent: number; // of total flour
@@ -666,13 +666,12 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     yeastPercent = yeastDosePercent * BIGA_FLOUR_FRACTION;
   } else {
     const conv = YEAST_CONVERSION[inputs.leavening as "idy" | "ady" | "fresh"];
-    const base = calcIdyPercent(effHours, inputs.roomTempC);
-    // With a fridge stage the schedule's own clock is not what sets the dose;
-    // see COMMERCIAL_COLD_DOSE. Taken as a ceiling rather than a replacement, so
-    // a short chill still falls to the clock and the dose stays monotone.
-    const limited = inputs.coldFerment
-      ? Math.min(base, coldDoseCeiling(inputs))
-      : base;
+    // Room and cold schedules share one clock, folded to the curve's reference;
+    // see commercialEquivalentHours and COLD_DECAY_K.
+    const base = calcIdyPercent(
+      commercialEquivalentHours(inputs),
+      YEAST_MODEL.refTempC
+    );
     // The cap is a property of the dosing curve, so it is tested before the
     // salt correction. Testing after would let a merely salty dough look like
     // an impossibly short ferment.
@@ -683,7 +682,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
         "Yeast is capped. That fermentation time is very short for this temperature."
       );
     }
-    yeastPercent = limited * conv * saltRetardationFactor(inputs.saltPercent);
+    yeastPercent = base * conv * saltRetardationFactor(inputs.saltPercent);
     yeastDosePercent = yeastPercent;
   }
 

@@ -103,7 +103,6 @@ const where = (i: WizardInputs) =>
 
 /** Warnings a baker can actually provoke from the sliders alone. */
 const REACHABLE: WarningId[] = [
-  "yeast-capped",
   "starter-capped",
   "starter-floored",
   "overferment-caution",
@@ -121,6 +120,9 @@ const REACHABLE: WarningId[] = [
  * fires from a slider-reachable input, either a limit or a formula has drifted.
  */
 const UNREACHABLE: WarningId[] = [
+  // At the traditional dose even 1 h in a 15 C kitchen asks for ~1.7%, under
+  // the 3% cap; only a hand-typed sub-hour ferment reaches it.
+  "yeast-capped",
   "formula-unbalanced",
   "starter-water",
   "starter-flour",
@@ -510,12 +512,13 @@ describe("warm and cool kitchens", () => {
         }
       }
     }
-    // The case the unit hid in the other direction: 6.5 h at 35 C is about 20 h
-    // at 21 C, past every published final-dough schedule.
+    // The case the unit hid in the other direction: 8 h at 35 C is about 20 h at
+    // 21 C on the dose curve's own clock (k / n), past every published
+    // final-dough schedule. A room-folded reading called it 8 h.
     const hotBiga = calculateRecipe({
       ...defaultInputs,
       leavening: "biga",
-      fermentationHours: 6.5,
+      fermentationHours: 8,
       coldFerment: false,
       roomTempC: 35,
     });

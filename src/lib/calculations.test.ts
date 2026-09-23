@@ -20,8 +20,8 @@ import {
   MIN_TEMPER_H,
   MIN_WEIGHABLE_YEAST_G,
   POOLISH_SCHEDULE,
-  COMMERCIAL_COLD_DOSE,
   MAX_TEMPER_H,
+  COLD_DECAY_K,
   PROTEOLYSIS_K,
   PROTEOLYTIC_TOLERANCE_H,
   STARTER_MODEL,
@@ -242,9 +242,12 @@ describe("salt retardation", () => {
   });
 
   it("raises the yeast weight monotonically with salt", () => {
+    // A big batch, so each 0.1% salt step moves the weight by more than the
+    // 0.01 g it is rounded to. At four balls the traditional dose is ~0.3 g and
+    // neighbouring steps round to the same number.
     let previous = 0;
     for (let salt = LIMITS.saltPercent.min; salt <= LIMITS.saltPercent.max; salt += 0.1) {
-      const weight = calculateRecipe(inputs({ saltPercent: salt })).yeastWeight;
+      const weight = calculateRecipe(inputs({ saltPercent: salt, pizzaCount: 40 })).yeastWeight;
       expect(weight, `salt ${salt}%`).toBeGreaterThan(previous);
       previous = weight;
     }
@@ -264,9 +267,9 @@ describe("cold fermentation kinetics", () => {
     const commercial = effectiveFermentationHours(inputs({ ...cold, leavening: "idy" }));
     const levain = effectiveFermentationHours(inputs({ ...cold, leavening: "sourdough" }));
     expect(levain).toBeLessThan(commercial);
-    // 24 h at 4 C in a 21 C kitchen: e^(0.08*-17) ~ 0.257 vs e^(0.12*-17) ~ 0.130
-    expect(commercial).toBeCloseTo(8 + 24 * Math.exp(0.08 * -17), 9);
-    expect(levain).toBeCloseTo(8 + 24 * Math.exp(0.12 * -17), 9);
+    // 24 h at 4 C in a 21 C kitchen: e^(0.105*-17) ~ 0.168 vs e^(0.12*-17) ~ 0.130
+    expect(commercial).toBeCloseTo(8 + 24 * Math.exp(COLD_DECAY_K.commercial * -17), 9);
+    expect(levain).toBeCloseTo(8 + 24 * Math.exp(COLD_DECAY_K.sourdough * -17), 9);
   });
 
   it("ignores the cold stage entirely when cold ferment is off", () => {
@@ -405,7 +408,7 @@ describe("two-clock kinetics", () => {
     // buys fermentation, so the protease total outruns the yeast total.
     const i = inputs({ coldFerment: true, coldHours: 48, coldTempC: 4, fermentationHours: 4 });
     expect(proteolyticHours(i)).toBeGreaterThan(effectiveFermentationHours(i));
-    expect(PROTEOLYSIS_K).toBeLessThan(0.08);
+    expect(PROTEOLYSIS_K).toBeLessThan(COLD_DECAY_K.commercial);
   });
 
   it("counts a preferment's own window on the protease clock only", () => {
@@ -575,8 +578,15 @@ describe("micro-dosing guardrails", () => {
   });
 
   it("stays quiet on an ordinary batch, and never flags a spooned starter", () => {
-    const ordinary = calculateRecipe(inputs());
-    expect(ids(ordinary).filter((id) => id.startsWith("microdose-"))).toEqual([]);
+    // The batch a first-time baker lands on, and the same-day preset. A 12 h
+    // room-temperature dough for four balls is *not* ordinary here: at the
+    // traditional dose it needs ~0.3 g, and the note on that is deserved.
+    for (const ordinary of [
+      calculateRecipe(defaultInputs),
+      calculateRecipe(inputs({ fermentationHours: 8 })),
+    ]) {
+      expect(ids(ordinary).filter((id) => id.startsWith("microdose-"))).toEqual([]);
+    }
 
     // A starter is spooned by weight in grams-to-tens-of-grams; it is exempt.
     const levain = calculateRecipe(
@@ -982,10 +992,11 @@ describe("commercial yeast with a cold ferment", () => {
       })
     ).yeastPercent;
 
-  it("matches Lehmann's schedule multipliers", () => {
-    // 1x room temperature = 0.30%, then 0.4x / 0.2x / 0.13x at 24 / 48 / 72 h.
-    // Before the ceiling the model returned 0.433 / 0.234 / 0.156 - 2.1 to 4.0x
-    // every published figure, with no guardrail saying so.
+  it("matches Lehmann's published cold-ferment doses", () => {
+    // 0.12 / 0.06 / 0.039% at 24 / 48 / 72 h. The first version of the fused
+    // clock returned 0.433 / 0.234 / 0.156 - 2.1 to 4.0x every figure - because
+    // the room curve under it ran ~5x above traditional practice. Refitted, the
+    // one clock lands 0.10 / 0.06 / 0.04 with no separate ceiling.
     for (const [coldHours, published] of [[24, 0.12], [48, 0.06], [72, 0.039]] as const) {
       const got = cold(coldHours);
       expect(got, `${coldHours}h`).toBeGreaterThan(published * 0.8);
@@ -993,24 +1004,31 @@ describe("commercial yeast with a cold ferment", () => {
     }
   });
 
-  it("stays inside the band every source agrees on", () => {
+  it("stays near the band every source agrees on", () => {
     // The sources disagree with each other by ~2x, so this is the envelope, not
     // a point target: Lehmann at the bottom, the consensus range at the top.
+    // 24 h sits 16% under Lehmann's 0.12%, recorded here rather than tuned away:
+    // lifting it would push the 48 h and 72 h doses and the seasonal
+    // pizzaioli doses off (COLD_DECAY_K). Hence 0.8x at the bottom.
     for (const [coldHours, lo, hi] of [[24, 0.12, 0.2], [48, 0.05, 0.1], [72, 0.039, 0.1]] as const) {
       const got = cold(coldHours);
-      expect(got, `${coldHours}h lower`).toBeGreaterThanOrEqual(lo * 0.9);
+      expect(got, `${coldHours}h lower`).toBeGreaterThanOrEqual(lo * 0.8);
       expect(got, `${coldHours}h upper`).toBeLessThanOrEqual(hi * 1.1);
     }
   });
 
-  it("lets the schedule clock govern a brief chill", () => {
-    // The ceiling is a ceiling, not a replacement. A 1-2 h chill is not a cold
-    // ferment, and must not collect a multi-day dose.
-    expect(cold(1)).toBeGreaterThan(1);
+  it("treats a brief chill as the room-temperature dough it nearly is", () => {
+    // One clock, no switch: a 1 h chill must dose within a hair of the same
+    // schedule with no fridge at all, not jump to a multi-day dose or away from it.
+    const noFridge = calculateRecipe(
+      inputs({ leavening: "idy", fermentationHours: 3, roomTempC: 21, coldFerment: false })
+    ).yeastPercent;
+    expect(cold(1)).toBeLessThanOrEqual(noFridge);
+    expect(cold(1)).toBeGreaterThan(noFridge * 0.9);
     expect(cold(1)).toBeGreaterThan(cold(24));
   });
 
-  it("keeps the dose monotone in every axis the ceiling touches", () => {
+  it("keeps the dose monotone in fridge time and in the kitchen", () => {
     let previous = Infinity;
     for (let ch = LIMITS.coldHours.min; ch <= LIMITS.coldHours.max; ch += 1) {
       const v = cold(ch);
@@ -1036,14 +1054,36 @@ describe("commercial yeast with a cold ferment", () => {
     }
   });
 
-  it("leaves room-temperature doughs and sourdough alone", () => {
-    // The ceiling only applies with a fridge stage, and only to commercial yeast.
+  it("follows the pizzaioli's seasonal cut on a long cold ferment", () => {
+    // pizza.it forum: Folino (72-96 h fridge) uses 1.5 / 1.0 / 0.5 g fresh per
+    // kg in winter / summer / above 30 C; Alessio (48 h+) 3 / 2 g. Kitchens
+    // taken as 18 / 26 / 31 C. Summer must come in under winter, as it does in
+    // both kitchens, and each dose within the sources' own ~2x spread.
+    const at = (roomTempC: number, coldHours: number) =>
+      calculateRecipe(
+        inputs({ leavening: "idy", fermentationHours: 3, roomTempC, coldFerment: true, coldHours, coldTempC: 4 })
+      ).yeastPercent;
+    for (const [label, T, ch, published] of [
+      ["Folino winter", 18, 84, 0.05],
+      ["Folino summer", 26, 84, 0.0333],
+      ["Folino >30 C", 31, 84, 0.0167],
+      ["Alessio winter", 18, 48, 0.1],
+      ["Alessio summer", 26, 48, 0.0667],
+    ] as const) {
+      const got = at(T, ch);
+      expect(got / published, label).toBeGreaterThan(0.5);
+      expect(got / published, label).toBeLessThan(2);
+    }
+    expect(at(26, 84)).toBeLessThan(at(18, 84));
+    expect(at(26, 48)).toBeLessThan(at(18, 48));
+  });
+
+  it("doses a room-temperature dough on the curve itself, and leaves sourdough alone", () => {
     const room = calculateRecipe(
       inputs({ leavening: "idy", fermentationHours: 12, roomTempC: 21 })
     );
     expect(room.yeastPercent).toBeCloseTo(
-      calcIdyPercent(COMMERCIAL_COLD_DOSE.referenceRoomH, 21) *
-        saltRetardationFactor(defaultInputs.saltPercent),
+      calcIdyPercent(12, 21) * saltRetardationFactor(defaultInputs.saltPercent),
       3 // yeastPercent is rounded for display
     );
     const levain = inputs({
@@ -1131,33 +1171,40 @@ describe("neapolitan: every method against published schedules", () => {
     }
   });
 
-  it("records where the room-temperature yeast dose sits between two camps", () => {
+  it("follows the traditional room-temperature doses, not the home-baker camp", () => {
     // Without a fridge stage, the published Neapolitan doses split into two
-    // camps 5-8x apart, and the model sits with the faster one:
+    // camps 3-8x apart. On 2026-09-23 the model moved from the faster one to
+    // the traditional one (YEAST_MODEL):
     //
-    //   traditional  AVPN 2 h + 6 h @ 25 C         0.03-0.06%  model 0.37%  (+561%)
-    //                Italian Pizza Secrets 8 h @ 20 0.06%       model 0.55%  (+820%)
-    //                PizzaPlan 8-12 h @ 20 C        0.08-0.13%  model 0.42%  (+218%)
-    //                PizzaBlab 4 h @ 20 C           0.48%       model 1.27%  (+164%)
-    //   home         The Pizza Craft 6-8 h          0.30-0.50%  model 0.60%   (+20%)
-    //                The Pizza Craft 24 h @ 22 C    0.10%       model 0.13%   (+26%)
+    //   traditional  AVPN 2 h + 6 h @ 25 C          0.033-0.056%  model 0.063%  (+12%)
+    //                Italian Pizza Secrets 8 h @ 20 0.06%         model 0.094%  (+56%)
+    //                PizzaPlan 8-12 h @ 20 C        0.077-0.133%  model 0.072%   (-7%)
+    //                PizzaBlab 4 h @ 20 C           0.48%         model 0.215%  (-55%)
+    //                pizza.it 12 h @ 28 C           0.017%        model 0.030%  (+82%)
+    //                24 h @ 20 C, 1 g fresh/kg      0.033%        model 0.025%  (-24%)
+    //   home         The Pizza Craft 6-8 h          0.30-0.50%    model 0.10%   (-66%)
+    //                The Pizza Craft 24 h @ 22 C    0.10%         model 0.021%  (-79%)
     //
-    // An open finding, not fixed here: YEAST_MODEL also sets the reference for
-    // the cold-dose ceiling, so moving it moves every commercial schedule, and it
-    // needs its own fit. Pinned so a recalibration updates this table on purpose.
+    // The traditional sources disagree among themselves - PizzaBlab's 4 h figure
+    // sits nearer the home camp - so the tolerance is their spread, not a tight fit.
+    const TRADITIONAL: Anchor[] = [
+      ["AVPN 2 h + 6 h @ 25 C", "idy", { fermentationHours: 8, roomTempC: 25 }, 0.033, 0.056],
+      ["Italian Pizza Secrets 8 h @ 20 C", "idy", { fermentationHours: 8, roomTempC: 20 }, 0.06, 0.06],
+      ["PizzaPlan 8-12 h @ 20 C", "idy", { fermentationHours: 10, roomTempC: 20 }, 0.077, 0.133],
+      ["PizzaBlab 4 h @ 20 C", "idy", { fermentationHours: 4, roomTempC: 20 }, 0.48, 0.48],
+      ["pizza.it 12 h @ 28 C, 0.5 g fresh/kg", "idy", { fermentationHours: 12, roomTempC: 28 }, 0.0167, 0.0167],
+      ["24 h @ 20 C, 1 g fresh/kg", "idy", { fermentationHours: 24, roomTempC: 20 }, 0.033, 0.033],
+    ];
     const HOME: Anchor[] = [
       ["The Pizza Craft same-day 7 h", "idy", { fermentationHours: 7 }, 0.3, 0.5],
       ["The Pizza Craft 24 h @ 22 C", "idy", { fermentationHours: 24, roomTempC: 22 }, 0.1, 0.1],
     ];
-    const TRADITIONAL: Anchor[] = [
-      ["AVPN 2 h + 6 h @ 25 C", "idy", { fermentationHours: 8, roomTempC: 25 }, 0.033, 0.056],
-      ["PizzaPlan 8-12 h @ 20 C", "idy", { fermentationHours: 10, roomTempC: 20 }, 0.077, 0.133],
-    ];
-    for (const [label, lv, o, lo, hi] of HOME) {
-      expect(Math.abs(miss(run(lv, o).yeastDosePercent, lo, hi)), label).toBeLessThan(0.3);
+    for (const [label, lv, o, lo, hi] of TRADITIONAL) {
+      const err = miss(run(lv, o).yeastDosePercent, lo, hi);
+      expect(Math.abs(err), `${label}: ${(err * 100).toFixed(0)}%`).toBeLessThan(0.9);
     }
-    for (const [label, lv, o, , hi] of TRADITIONAL) {
-      expect(run(lv, o).yeastDosePercent, label).toBeGreaterThan(hi * 2);
+    for (const [label, lv, o, lo] of HOME) {
+      expect(run(lv, o).yeastDosePercent, label).toBeLessThan(lo / 2);
     }
   });
 });

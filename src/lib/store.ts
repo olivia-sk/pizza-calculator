@@ -43,8 +43,7 @@ const defaultInputs: WizardInputs = {
   leavening: "idy",
   sourdoughPercent: 15,
   // The commercial "Overnight cold" recommendation (RECOMMENDED_SCHEDULE), so a
-  // fresh load already sits on a preset. Its dose is the one anchored to
-  // published practice; the room-temperature dose is still an open question.
+  // fresh load already sits on a preset.
   fermentationHours: 3,
   roomTempC: 21,
   coldFerment: true,

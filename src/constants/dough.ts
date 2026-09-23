@@ -148,80 +148,52 @@ export const SALT_RETARDATION_SLOPE = 12;
 export const SALT_FACTOR_BOUNDS = { min: 0.7, max: 1.5 } as const;
 
 /**
- * Decay constant for folding a cold stage into room-temperature-equivalent
- * hours. Wild yeast and the lactic acid bacteria in a sourdough culture shut
- * down harder in the fridge than commercial S. cerevisiae does, so a fridge
- * hour buys less fermentation; reusing k = 0.08 for a levain overestimates
- * cold activity and under-doses the starter.
+ * Decay constant for folding a cold stage into equivalent hours at 21 C, the
+ * yeast clock's fridge arm. Wild yeast and the lactic acid bacteria in a
+ * sourdough culture shut down harder in the fridge than commercial
+ * S. cerevisiae does, so a levain gets its own, steeper value.
+ *
+ * The commercial value is fitted to published cold-ferment doses, with the
+ * ambient hours folded at YEAST_MODEL's own k / n and the result dosed on
+ * YEAST_MODEL at 21 C (`commercialEquivalentHours`). IDY % of flour, 2.9% salt:
+ *
+ *   schedule                            published   model
+ *   Lehmann 3 h + 24 h @ 4 C             0.12       0.10   (-16%)
+ *   Lehmann 3 h + 48 h @ 4 C             0.06       0.06
+ *   Lehmann 3 h + 72 h @ 4 C             0.039      0.040
+ *   Vincenzo's Plate 6 h + 18 h @ 4 C    0.10       0.075  (-25%)
+ *   Folino 3 h + 84 h, kitchen 18 C      0.050      0.036  (-28%)
+ *   Folino, kitchen 26 C                 0.033      0.032
+ *   Folino, kitchen 31 C                 0.017      0.029  (+73%)
+ *   Alessio 3 h + 48 h, kitchen 18 C     0.10       0.062  (-38%)
+ *   Alessio, kitchen 26 C                0.067      0.052  (-22%)
+ *
+ * Mean miss 23%, the same as the Lehmann-multiplier ceiling it replaced. The
+ * Folino and Alessio rows are seasonal doses from the pizza.it forum ("Lievito
+ * in inverno"); the posts name seasons, so the kitchens are taken as 18 / 26 /
+ * 31 C, and Alessio's unit (per kg flour or per litre water) is not stated.
+ *
+ * That ceiling existed because this clock once over-dosed every cold ferment
+ * 2-4x, and no k fixed it without dropping below PROTEOLYSIS_K. The cause was
+ * the room-temperature curve, not the clock: YEAST_MODEL ran ~5x above the
+ * traditional Neapolitan doses. Refitted to them, one clock carries both room
+ * and cold schedules, and 0.105 keeps the ordering the overfermentation
+ * guardrail rests on - chilling slows the gas more than the enzymes.
+ *
+ * Lehmann's own practice holds the dose and controls the finished dough
+ * temperature with chilled water; the pizzaioli above cut the yeast in summer
+ * instead. This app sets no dough-temperature target, so it follows them.
  */
-export const COLD_DECAY_K = { commercial: 0.08, sourdough: 0.12 } as const;
-
-/**
- * How a commercial-yeast dose is set once a fridge stage is involved.
- *
- * The fused clock above cannot do this job. Measured against published
- * cold-ferment doses it ran 2.1-4.0x high at every duration (ambient 3 h @ 21 C,
- * fridge 4 C: 0.433% / 0.234% / 0.156% at 24 / 48 / 72 h against a published
- * 0.12% / 0.06% / 0.039%), and no value of COLD_DECAY_K.commercial fixes it:
- * anything low enough to reach the published band drops below PROTEOLYSIS_K,
- * which inverts the argument the overfermentation guardrail rests on - that
- * chilling slows the gas more than it slows the enzymes. The best k that keeps
- * that ordering still over-doses by ~2x. The functional form was the problem,
- * not the constant.
- *
- * Tom Lehmann's schedule multipliers state the relationship directly: against a
- * room-temperature dose of 1x, use 0.4x at 24 h, 0.2x at 48 h and 0.13x at 72 h
- * of fridge. Those land almost exactly on a simple reciprocal,
- *
- *   factor = coldHourConstant / coldHours     (9.6/24 = 0.40, 9.6/48 = 0.20,
- *                                              9.6/72 = 0.133)
- *
- * applied to the dose for referenceRoomH, which is the room-temperature
- * schedule YEAST_MODEL is calibrated at (12 h @ 21 C -> ~0.30%, the same 1x
- * anchor Lehmann quotes).
- *
- * The result is used as a CEILING, not a replacement: the dose is the lesser of
- * what the whole schedule needs and what the fridge stage allows. That keeps
- * short fridge stages sane - at 1-2 h the fused clock is still lower and governs,
- * so a brief chill does not get a four-day dose - and it leaves the dose monotone
- * in fridge time, ambient time and room temperature, which the audit sweep pins.
- *
- * Error against all seven published anchors falls from 207% to ~20%, which is
- * the floor: the sources disagree with each other by about 2x.
- *
- * Sourdough does not use this. Its own dose is set by STARTER_MODEL, and the
- * levain arm of COLD_DECAY_K is a separate, still-open question.
- *
- * The reference dose is taken at the baker's room temperature, so the whole
- * ceiling scales with the kitchen, although only the ambient hours are spent
- * there. That looks like it over-corrects, and a 2026-09-23 audit flagged it. It
- * was checked against practice and kept. Neapolitan pizzaioli on long cold
- * ferments cut the yeast by season (pizza.it forum, "Lievito in inverno"):
- *
- *   Folino   72-96 h fridge   1.5 / 1.0 / 0.5 g fresh per kg   winter / summer / >30 C
- *   Alessio  48 h+ fridge     3 / 2 g                          winter / summer
- *
- * With kitchens taken as 18 / 26 / 31 C (the posts name seasons, not
- * temperatures), this ceiling misses by 24% on average. A ceiling referenced at
- * 21 C, which is flat in the kitchen, misses by 39%, and by +115% above 30 C.
- *
- * Lehmann's own practice is different, not contrary: he holds the dose and
- * controls the finished dough temperature with chilled water. This app sets no
- * dough-temperature target, so a baker in a hot kitchen is in the pizzaioli's
- * position, not his.
- */
-export const COMMERCIAL_COLD_DOSE = {
-  referenceRoomH: 12,
-  coldHourConstant: 9.6,
-} as const;
+export const COLD_DECAY_K = { commercial: 0.105, sourdough: 0.12 } as const;
 
 /**
  * Decay constant for the *protease* clock, the second of the two kinetics used
  * here. Flour proteases run at a Q10 of roughly 1.65 (e^(0.05*10) = 1.65),
- * markedly flatter than yeast's ~2.2, which is the whole reason a long cold
- * cold ferment is not made safe by cutting the dose: chilling slows the gas down more
- * than it slows the enzymes chewing through the gluten, so every fridge hour
- * costs relatively more structure than it buys time.
+ * markedly flatter than yeast's (~2.2 at room temperature, ~2.9 on the
+ * commercial fridge arm), which is the whole reason a long cold ferment is not
+ * made safe by cutting the dose: chilling slows the gas down more than it slows
+ * the enzymes chewing through the gluten, so every fridge hour costs
+ * relatively more structure than it buys time.
  */
 export const PROTEOLYSIS_K = 0.05;
 
@@ -346,10 +318,9 @@ export function scheduleFamily(leavening: LeaveningType): ScheduleFamily {
  * everything stays editable afterwards. For a poolish or biga they set the
  * *final dough*; the preferment runs on its own declared window.
  *
- *   commercial  same-day 8 h                 The Pizza Craft 6-8 h
- *               overnight 3 h + 24 h fridge  Lehmann 24 h (recommended: the
- *               two-day 3 h + 48 h fridge    cold dose is anchored; the room
- *                                            dose is the open 2-8x finding)
+ *   commercial  same-day 8 h                 AVPN 2 h bulk + 6 h balls
+ *               overnight 3 h + 24 h fridge  Lehmann 24 h (recommended)
+ *               two-day 3 h + 48 h fridge    Lehmann 48 h
  *   poolish     balls 6 h at room            1 h bulk + 4-6 h balls
  *               overnight 3 h + 20 h fridge  Vito Iacopelli, Pala (recommended)
  *   biga        6.5 h at room                1-2 h bulk + 4-6 h appretto
@@ -405,13 +376,33 @@ export const MIN_TEMPER_H = 1.5;
  *
  *   Y(t, T) = C / t^n * exp(k * (Tref - T))
  *
- * Calibrated so that 12 h at 21 C lands on ~0.30% IDY, the standard
- * room-temperature bulk dose. n = 1.2 reflects that yeast multiplies during
- * the rise, so dosage falls off slightly faster than 1/t. k = 0.08 per C is a
- * Q10 of e^0.8 ~ 2.2, i.e. fermentation roughly doubles in rate per 10 C.
+ * Fitted to the traditional Neapolitan room-temperature doses (IDY % of flour,
+ * 2.9% salt; fresh yeast / 3):
+ *
+ *   schedule                              published     model
+ *   AVPN 2 h + 6 h @ 25 C                 0.033-0.056   0.063  (+12%)
+ *   Italian Pizza Secrets 8 h @ 20 C      0.06          0.094  (+56%)
+ *   PizzaPlan 8-12 h @ 20 C               0.077-0.133   0.072  (-7%)
+ *   PizzaBlab 4 h @ 20 C                  0.48          0.215  (-55%)
+ *   pizza.it 12 h @ 28 C, 0.5 g fresh/kg  0.017         0.030  (+82%)
+ *   24 h @ 20 C, 1 g fresh/kg             0.033         0.025  (-24%)
+ *
+ * The sources disagree among themselves - PizzaBlab's 4 h figure sits nearer
+ * the home-baker camp - so a mean miss of ~39% is their spread, not the fit's.
+ * The home-baker doses (The Pizza Craft, 0.3-0.5% for 6-8 h) run 3-5x higher
+ * and are recorded in the tests, not followed. This curve used to sit with them
+ * (C = 5.9, 12 h at 21 C -> 0.30%); the traditional camp was chosen on
+ * 2026-09-23 because this is a Neapolitan calculator, and because an
+ * under-dosed dough can be given time while an over-proofed one cannot be
+ * taken back. 12 h at 21 C is now ~0.05%.
+ *
+ * With a fridge stage the same curve doses the whole schedule folded to 21 C;
+ * see COLD_DECAY_K for the cold fit. n = 1.2 reflects that yeast multiplies
+ * during the rise, so dosage falls off slightly faster than 1/t. k = 0.08 per C
+ * is a Q10 of e^0.8 ~ 2.2, i.e. fermentation roughly doubles in rate per 10 C.
  */
 export const YEAST_MODEL = {
-  C: 5.9,
+  C: 1.0,
   n: 1.2,
   k: 0.08,
   refTempC: 21,
@@ -514,9 +505,9 @@ export const POOLISH_SCHEDULE = {
  * at 4 C unless noted):
  *
  *   poolish, 1 h bulk + 4-6 h balls at room      ->  5-7 h
- *   Vito Iacopelli, ~3 h ambient + 16-24 h fridge ->  ~8 h
- *   Pala, ~3 h ambient + 18-24 h fridge           ->  ~8 h
- *   Salt Butter Smoke, ~3 h + 36-48 h fridge      -> 12-15 h  (17 h at 6 C)
+ *   Vito Iacopelli, ~3 h ambient + 16-24 h fridge ->  6-7 h
+ *   Pala, ~3 h ambient + 18-24 h fridge           ->  6-7 h
+ *   Salt Butter Smoke, ~3 h + 36-48 h fridge      ->  9-11 h  (13 h at 6 C)
  *   biga, 1-2 h bulk + 4-6 h appretto at room     ->  5-8 h
  *
  * So `short` is under the shortest room schedule and `long` is over the
