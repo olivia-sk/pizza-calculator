@@ -9,6 +9,7 @@ import {
   MAX_AMBIENT_WITH_COLD_H,
   MIN_TEMPER_H,
   MIN_WEIGHABLE_YEAST_G,
+  OVERNIGHT_STARTER_FLOOR,
   POOLISH_FLOUR_FRACTION,
   POOLISH_HONEY_PERCENT,
   POOLISH_MODEL,
@@ -170,9 +171,12 @@ export function calcBigaIdyPercent(hours: number, roomTempC: number): number {
 export function suggestedStarterPercent(
   hours: number,
   roomTempC: number,
-  saltPercent: number = SALT_BASELINE * 100
+  saltPercent: number = SALT_BASELINE * 100,
+  floorPercent = 0
 ): number {
-  const base = dose(STARTER_MODEL, hours, roomTempC);
+  // The floor is taken before the salt correction, like the curve it competes
+  // with, so a salty dough scales both the same way.
+  const base = Math.max(dose(STARTER_MODEL, hours, roomTempC), floorPercent);
   const adjusted = base * saltRetardationFactor(saltPercent);
   return roundTo(
     clamp(adjusted, STARTER_MODEL.minPercent, STARTER_MODEL.maxPercent),
@@ -300,6 +304,20 @@ export function starterEquivalentHours(inputs: WizardInputs): number {
 }
 
 /**
+ * The least starter an overnight cold ferment wants, before salt; 0 without a
+ * fridge stage. See OVERNIGHT_STARTER_FLOOR for the anchors and the fit.
+ */
+export function overnightStarterFloor(inputs: WizardInputs): number {
+  if (!inputs.coldFerment) return 0;
+  const { percentHours, minColdH, refColdTempC } = OVERNIGHT_STARTER_FLOOR;
+  const T = Number.isFinite(inputs.coldTempC) ? inputs.coldTempC : refColdTempC;
+  return (
+    (percentHours / Math.max(inputs.coldHours, minColdH)) *
+    Math.exp(COLD_DECAY_K.sourdough * (refColdTempC - T))
+  );
+}
+
+/**
  * Equivalent hours on the protease clock, across *every* stage the flour lives
  * through: the preferment's maturation, the ambient handling, and the cold stage.
  * This is the quantity the overfermentation guardrail is thresholded on, and the
@@ -371,7 +389,8 @@ export function resolveFormula(
     resolved.sourdoughPercent = suggestedStarterPercent(
       starterEquivalentHours(inputs),
       STARTER_MODEL.refTempC,
-      resolved.saltPercent
+      resolved.saltPercent,
+      overnightStarterFloor(inputs)
     );
   }
   return resolved;
@@ -552,7 +571,9 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     // floor from ever being reported at all.
     const suggested = suggestedStarterPercent(
       starterEquivalentHours(inputs),
-      STARTER_MODEL.refTempC
+      STARTER_MODEL.refTempC,
+      undefined,
+      overnightStarterFloor(inputs)
     );
     if (suggested >= STARTER_MODEL.maxPercent - 1e-9) {
       warnings.add(

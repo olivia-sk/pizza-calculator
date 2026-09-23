@@ -443,11 +443,12 @@ export const POOLISH_MODEL = {
  *   classic 4 h + 24 h    actual 15.0%  -> 16.9%  (+12%)
  *   Strgar 24-30 h        actual 20.0%  -> 12.4%  (-38%)   <- worst fit
  *
- * That last row is a known, accepted discrepancy: SOURDOUGH_METHOD below names
- * Strgar, and the schedule builder generates his short-bulk shape, but the dose
- * comes out Leopard-style. Raising C to chase it would move every other
- * schedule, so it is documented rather than fixed. Treat any suggestion here as
- * a starting point with real uncertainty, not a solved number.
+ * That last row is the curve alone. SOURDOUGH_METHOD below names Strgar and the
+ * schedule builder generates his short-bulk shape, but the curve doses it
+ * Leopard-style. Raising C to chase it would move every other schedule, so the
+ * overnight school gets its own floor instead (OVERNIGHT_STARTER_FLOOR), which
+ * brings Strgar to within ~1% and leaves the rows above on this curve. Treat any
+ * suggestion here as a starting point with real uncertainty, not a solved number.
  *
  * n = 1 (plain 1/t) and k = 0.08 are carried over from YEAST_MODEL. Note k is
  * NOT inert: `starterEquivalentHours` folds the ambient stage to 21 C at k / n,
@@ -501,6 +502,49 @@ export const POOLISH_SCHEDULE = {
  * longest cold one even in a 6 C fridge. Both fire a note, never a clamp.
  */
 export const PREFERMENT_MAIN_DOUGH_EQ_H = { short: 4, long: 18 } as const;
+
+/**
+ * The least starter an overnight cold ferment wants, as a percentage of total
+ * flour before the salt correction:
+ *
+ *   floor = percentHours / max(coldHours, minColdH) * exp(k * (refColdTempC - Tc))
+ *
+ * with k the levain's COLD_DECAY_K. The suggestion is the greater of this and
+ * STARTER_MODEL's curve, so it is a floor, not a replacement.
+ *
+ * Why it exists. The published sourdough pizza methods are two schools
+ * (STARTER_MODEL's docstring). Leopard Crust uses little starter and bulks to
+ * completion before a multi-day fridge stage; Strgar and similar overnight
+ * methods use a lot of starter, bulk briefly and bake the next day. The curve
+ * fits the first school and read the second 38-53% low, so the app's own
+ * overnight preset (7 h + 16 h) came out at 13% against ~20% published. Moving
+ * the levain's cold k cannot fix that - it made the mean error across the cold
+ * anchors worse, 31% -> 50%, while barely moving Strgar - because the misses are
+ * by method, not by fridge constant.
+ *
+ * The overnight anchors, as this app counts a starter (100% hydration, percent
+ * of total flour), sit on one reciprocal in fridge hours:
+ *
+ *   Rene Strgar      3 h bulk + ~16 h @ 5 C + 3-6 h temper  20.5%  -> 328
+ *   SomebodyFeedSeb  8 h room + 12-24 h @ ~4 C + 4-5 h       18.2%  -> 291
+ *                    (Strgar's 200 g of a 75% starter per kg flour converts to
+ *                     20.5%; both backed out to base salt and a 5 C fridge)
+ *
+ * percentHours is their geometric mean, 310, which lands each within ~6%.
+ * Longer fridge stages fall under the curve and are untouched: Leopard Crust
+ * 48 h -> floor 7.3% against the curve's 9.4%, 72 h -> 4.8% against 7.6%, and
+ * the classic 4 h + 24 h -> 14.5% against 17.7%.
+ *
+ * minColdH stops the reciprocal running away on a short chill. It is the
+ * shortest fridge stage in the anchors, so the floor never extrapolates below
+ * the data: anything shorter is held at the 16 h value, which keeps the
+ * suggestion non-increasing in fridge time.
+ */
+export const OVERNIGHT_STARTER_FLOOR = {
+  percentHours: 310,
+  minColdH: 16,
+  refColdTempC: 5,
+} as const;
 
 /** Share of total flour that goes into the poolish (Vito Iacopelli style). */
 export const POOLISH_FLOUR_FRACTION = 0.3;
