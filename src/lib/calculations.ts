@@ -275,6 +275,31 @@ export function effectiveFermentationHours(inputs: WizardInputs): number {
 }
 
 /**
+ * The main dough's schedule folded to the starter curve's own reference
+ * temperature, which is what the suggested starter is solved against. Evaluate
+ * `suggestedStarterPercent` at STARTER_MODEL.refTempC with this, never at the
+ * room temperature.
+ *
+ * Each stage is folded at the rate that belongs to it. The ambient stage uses
+ * the curve's own temperature response (k / n, which reproduces its
+ * exp(k * (Tref - T)) exactly, so a schedule without a fridge stage doses as it
+ * always has). The fridge stage uses the levain's steeper cold k, and because it
+ * is folded straight to the reference its contribution no longer depends on the
+ * room at all. Folding it to room temperature instead, then letting `dose`
+ * correct back at a different k, left the two corrections fighting: a warmer
+ * room shrank the fridge's share faster than it cut the dose, and the suggestion
+ * went *up*.
+ */
+export function starterEquivalentHours(inputs: WizardInputs): number {
+  const [ambient, ...cold] = mainDoughStages(inputs);
+  const ref = STARTER_MODEL.refTempC;
+  return (
+    equivalentHours([ambient], ref, STARTER_MODEL.k / STARTER_MODEL.n) +
+    equivalentHours(cold, ref, COLD_DECAY_K.sourdough)
+  );
+}
+
+/**
  * Equivalent hours on the protease clock, across *every* stage the flour lives
  * through: the preferment's maturation, the ambient handling, and the cold stage.
  * This is the quantity the overfermentation guardrail is thresholded on, and the
@@ -344,8 +369,8 @@ export function resolveFormula(
     // Salt comes from the style here, so the starter dose is corrected against
     // the salt the dough will actually carry, not the raw input.
     resolved.sourdoughPercent = suggestedStarterPercent(
-      effectiveFermentationHours(inputs),
-      inputs.roomTempC,
+      starterEquivalentHours(inputs),
+      STARTER_MODEL.refTempC,
       resolved.saltPercent
     );
   }
@@ -525,7 +550,10 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
     // salty dough read as a schedule the model cannot reach, and - since the
     // correction is applied after `dose` has already clamped - would stop the
     // floor from ever being reported at all.
-    const suggested = suggestedStarterPercent(effHours, inputs.roomTempC);
+    const suggested = suggestedStarterPercent(
+      starterEquivalentHours(inputs),
+      STARTER_MODEL.refTempC
+    );
     if (suggested >= STARTER_MODEL.maxPercent - 1e-9) {
       warnings.add(
         "starter-capped",

@@ -434,12 +434,12 @@ export const POOLISH_MODEL = {
  * treats the fridge as a hold; Strgar bulks briefly and lets the fridge do the
  * work. C = 120 is a deliberate midpoint between them, not a fitted constant.
  *
- * Measured against published doses, the curve lands within ~13% on the
+ * Measured against published doses, the curve lands within ~20% on the
  * bulk-to-completion schedules and under-reads the short-bulk/long-fridge shape
  * badly:
  *
- *   Leopard Crust 48 h    actual  7.5%  ->  8.5%  (+13%)
- *   Leopard Crust 72 h    actual  7.5%  ->  6.8%   (-9%)
+ *   Leopard Crust 48 h    actual  7.5%  ->  9.0%  (+20%)
+ *   Leopard Crust 72 h    actual  7.5%  ->  7.3%   (-3%)
  *   classic 4 h + 24 h    actual 15.0%  -> 16.9%  (+12%)
  *   Strgar 24-30 h        actual 20.0%  -> 12.4%  (-38%)   <- worst fit
  *
@@ -450,8 +450,10 @@ export const POOLISH_MODEL = {
  * a starting point with real uncertainty, not a solved number.
  *
  * n = 1 (plain 1/t) and k = 0.08 are carried over from YEAST_MODEL. Note k is
- * NOT inert: `dose` is called with the room temperature, so changing it shifts
- * every schedule away from 21 C by up to 15%.
+ * NOT inert: `starterEquivalentHours` folds the ambient stage to 21 C at k / n,
+ * so changing it shifts every schedule away from 21 C by up to 15%. A fridge
+ * stage is folded at COLD_DECAY_K.sourdough instead, straight to 21 C, so the
+ * room temperature never touches it.
  */
 export const STARTER_MODEL = {
   C: 120,

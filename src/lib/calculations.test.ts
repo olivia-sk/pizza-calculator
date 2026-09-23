@@ -8,6 +8,7 @@ import {
   proteolyticHours,
   resolveFormula,
   saltRetardationFactor,
+  starterEquivalentHours,
   suggestedStarterPercent,
 } from "./calculations";
 import { LIMITS, defaultInputs } from "./store";
@@ -759,10 +760,13 @@ describe("suggested sourdough starter", () => {
         { fermentationHours: 4, coldFerment: true, coldHours: 24, coldTempC: 4 },
         17.7,
       ],
+      // Was 8.9 while the fridge stage was folded to room temperature; folding
+      // it straight to 21 C stops a cool 18 C kitchen from inflating the fridge's
+      // share. Published 5-10% (7.5% used), so still inside the band.
       [
         "Leopard Crust 9 h @ 18 C + 48 h @ 4 C",
         { fermentationHours: 9, roomTempC: 18, coldFerment: true, coldHours: 48, coldTempC: 4 },
-        8.9,
+        9.4,
       ],
     ];
     for (const [label, o, expected] of anchors) {
@@ -846,11 +850,37 @@ describe("suggested sourdough starter", () => {
     const i = inputs({ leavening: "sourdough", fermentationHours: 12 });
     expect(resolveFormula(i, false).sourdoughPercent).toBe(
       suggestedStarterPercent(
-        effectiveFermentationHours(i),
-        i.roomTempC,
+        starterEquivalentHours(i),
+        STARTER_MODEL.refTempC,
         STYLES[i.style].defaultSalt
       )
     );
+  });
+
+  it("folds a room-only schedule exactly as the curve's own temperature term", () => {
+    // Folding the ambient stage to 21 C at k / n must reproduce
+    // exp(k * (21 - T)), or moving to the folded form would have silently
+    // re-dosed every schedule without a fridge stage.
+    for (const roomTempC of [LIMITS.roomTempC.min, 18, 21, 24, LIMITS.roomTempC.max]) {
+      for (const fermentationHours of [2, 6, 12, 24]) {
+        const i = inputs({ leavening: "sourdough", roomTempC, fermentationHours });
+        expect(
+          suggestedStarterPercent(starterEquivalentHours(i), STARTER_MODEL.refTempC),
+          `${fermentationHours}h @${roomTempC}C`
+        ).toBe(suggestedStarterPercent(fermentationHours, roomTempC));
+      }
+    }
+  });
+
+  it("does not let the room temperature reach into the fridge stage", () => {
+    // Only the ambient hours are warmed by the room; the fridge's contribution
+    // is the same whatever the kitchen is doing.
+    const schedule = { leavening: "sourdough" as const, fermentationHours: 4, coldHours: 24, coldTempC: 4 };
+    const fridgeShare = (roomTempC: number) =>
+      starterEquivalentHours(inputs({ ...schedule, roomTempC, coldFerment: true })) -
+      starterEquivalentHours(inputs({ ...schedule, roomTempC, coldFerment: false }));
+    expect(fridgeShare(15)).toBeCloseTo(fridgeShare(21), 9);
+    expect(fridgeShare(35)).toBeCloseTo(fridgeShare(21), 9);
   });
 
   it("leaves an advanced-mode override untouched", () => {

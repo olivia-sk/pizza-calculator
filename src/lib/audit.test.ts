@@ -269,6 +269,26 @@ describe("input space audit", () => {
       expect(v, `room ${t}C`).toBeLessThanOrEqual(previous + 1e-9);
       previous = v;
     }
+
+    // The same axis with a fridge stage on. The fridge hours used to be folded
+    // to room temperature at the levain's cold k and then corrected back at the
+    // curve's own k, and the two did not cancel: warming the room shrank the
+    // fridge's share faster than it cut the dose, so 1 h + 16 h @ 4 C asked for
+    // more starter at 16 C than at 15 C.
+    for (const coldTempC of [LIMITS.coldTempC.min, 4, 6, LIMITS.coldTempC.max]) {
+      for (const fermentationHours of [1, 4, 9, 16, LIMITS.fermentationHours.max]) {
+        for (const coldHours of [1, 4, 16, 48, LIMITS.coldHours.max]) {
+          const cold = { ...sd, coldFerment: true, coldTempC, coldHours, fermentationHours };
+          previous = Infinity;
+          for (let t = LIMITS.roomTempC.min; t <= LIMITS.roomTempC.max; t += 1) {
+            const v = starter({ ...cold, roomTempC: t });
+            const label = `${fermentationHours}h + ${coldHours}h @${coldTempC}C, room ${t}C`;
+            expect(v, label).toBeLessThanOrEqual(previous + 1e-9);
+            previous = v;
+          }
+        }
+      }
+    }
   });
 
   it("only ever suggests a starter the slider can actually show", () => {
