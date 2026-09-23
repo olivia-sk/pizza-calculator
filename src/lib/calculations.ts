@@ -13,6 +13,7 @@ import {
   POOLISH_HONEY_PERCENT,
   POOLISH_MODEL,
   POOLISH_SCHEDULE,
+  PREFERMENT_MAIN_DOUGH_EQ_H,
   PRE_FRIDGE_BULK_CAP_H,
   PRE_FRIDGE_BULK_FRACTION,
   SOURDOUGH_COLD_HANDLING,
@@ -711,6 +712,36 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
         "activity, near the limit for W280-320 flour. The dough will handle softer " +
         `than usual; ${shorten} or use a stronger flour for margin.`
     );
+  }
+
+  // A preferment dough adds no yeast on mixing day, so its dose cannot answer
+  // for the final dough's schedule. This is the only check on that stage; see
+  // PREFERMENT_MAIN_DOUGH_EQ_H for the published schedules it brackets.
+  if (isPoolish || isBiga) {
+    const name = isPoolish ? "poolish" : "biga";
+    if (effHours < PREFERMENT_MAIN_DOUGH_EQ_H.short) {
+      warnings.add(
+        "preferment-main-short",
+        "note",
+        `The final dough gets about ${formatHours(effHours)} of yeast activity. The ` +
+          `${name} carries all the yeast this dough gets, and published schedules give ` +
+          "the balls 4-6 hours at room temperature after mixing. " +
+          (inputs.coldFerment
+            ? "Give it longer on the counter or in the fridge."
+            : "Give the balls longer on the counter.")
+      );
+    } else if (effHours > PREFERMENT_MAIN_DOUGH_EQ_H.long) {
+      warnings.add(
+        "preferment-main-long",
+        "note",
+        `The final dough gets about ${formatHours(effHours)} of yeast activity on top ` +
+          `of a ripe ${name}, longer than published schedules run. Expect the balls to ` +
+          "over-proof: " +
+          (inputs.coldFerment
+            ? "shorten the fridge stage or the room ferment."
+            : "shorten the room ferment.")
+      );
+    }
   }
 
   if (inputs.coldFerment) {

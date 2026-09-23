@@ -99,6 +99,8 @@ export type WarningId =
   | "yeast-capped"
   | "starter-capped"
   | "starter-floored"
+  | "preferment-main-short"
+  | "preferment-main-long"
   | "overferment-caution"
   | "overferment-severe"
   | "microdose-note"

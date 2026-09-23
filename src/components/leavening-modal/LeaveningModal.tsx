@@ -4,7 +4,12 @@ import { Modal } from "@/components/modal/Modal";
 import { Button } from "@/components/button/Button";
 import { OptionCard } from "@/components/option-card/OptionCard";
 import { SliderControl } from "@/components/slider-control/SliderControl";
-import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
+import {
+  LIMITS,
+  leaveningPatch,
+  useRecipeInputs,
+  useWizardStore,
+} from "@/lib/store";
 import { tempRange } from "@/lib/calculations";
 import {
   BIGA_FLOUR_FRACTION,
@@ -52,7 +57,7 @@ export function LeaveningModal({ open, onOpenChange }: LeaveningModalProps) {
           <OptionCard
             key={opt.id}
             selected={inputs.leavening === opt.id}
-            onClick={() => updateInputs({ leavening: opt.id })}
+            onClick={() => updateInputs(leaveningPatch(inputs, opt.id))}
             title={opt.title}
             subtitle={opt.subtitle}
           />

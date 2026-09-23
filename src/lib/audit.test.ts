@@ -6,7 +6,13 @@ import {
   resolveFormula,
 } from "./calculations";
 import { buildWorkflow } from "./workflow";
-import { LIMITS, defaultInputs } from "./store";
+import {
+  LIMITS,
+  activeSchedulePreset,
+  defaultInputs,
+  leaveningPatch,
+  schedulePresetPatch,
+} from "./store";
 import {
   LeaveningType,
   MassUnit,
@@ -15,7 +21,12 @@ import {
   WarningId,
   WizardInputs,
 } from "@/types";
-import { SOURDOUGH_COLD_HANDLING, STYLES } from "@/constants/dough";
+import {
+  DEFAULT_SOURDOUGH_PRESET_ID,
+  SOURDOUGH_COLD_HANDLING,
+  SOURDOUGH_SCHEDULE_PRESETS,
+  STYLES,
+} from "@/constants/dough";
 
 /*
   A sweep of the reachable input space, run as one suite so that a whole class of
@@ -95,6 +106,8 @@ const REACHABLE: WarningId[] = [
   "microdose-warn",
   "temper-short",
   "ambient-long-with-cold",
+  "preferment-main-short",
+  "preferment-main-long",
 ];
 
 /**
@@ -337,6 +350,7 @@ describe("input space audit", () => {
       ["overferment-caution", "overferment-severe"],
       ["microdose-note", "microdose-warn"],
       ["starter-capped", "starter-floored"],
+      ["preferment-main-short", "preferment-main-long"],
     ];
     for (const i of grid()) {
       const ids = calculateRecipe(i).warnings.map((w) => w.id);
@@ -368,5 +382,80 @@ describe("input space audit", () => {
     // Whatever else changes, the defaults a first-time user lands on must not
     // greet them with a warning.
     expect(calculateRecipe(defaultInputs).warnings).toEqual([]);
+  });
+});
+
+describe("sourdough schedule presets", () => {
+  /** Every kitchen and fridge a preset is likely to meet, per style. */
+  function* presetGrid() {
+    for (const style of STYLE_IDS) {
+      for (const preset of SOURDOUGH_SCHEDULE_PRESETS) {
+        for (const roomTempC of [18, 21, 24]) {
+          for (const coldTempC of [3, 5, 7]) {
+            const raw: WizardInputs = {
+              ...defaultInputs,
+              style,
+              leavening: "sourdough",
+              roomTempC,
+              coldTempC,
+              ...schedulePresetPatch(preset),
+            };
+            yield { preset, i: resolveFormula(raw, false) };
+          }
+        }
+      }
+    }
+  }
+  const at = (p: { id: string }, i: WizardInputs) =>
+    `${p.id} ${i.style} @${i.roomTempC}C fridge ${i.coldTempC}C`;
+
+  it("never hands a baker a preset that warns", () => {
+    // A preset is a claim that this shape works. If one ever raises a warn-tone
+    // guardrail in an ordinary kitchen, the preset is wrong, not the guardrail.
+    for (const { preset, i } of presetGrid()) {
+      const warned = calculateRecipe(i)
+        .warnings.filter((w) => w.tone === "warn")
+        .map((w) => w.id);
+      expect(warned, at(preset, i)).toEqual([]);
+    }
+  });
+
+  it("stays inside the ambient budget the sourdough copy quotes", () => {
+    for (const { preset, i } of presetGrid()) {
+      if (!preset.coldFerment) continue;
+      expect(i.fermentationHours, at(preset, i)).toBeLessThanOrEqual(
+        SOURDOUGH_COLD_HANDLING.maxAmbientH
+      );
+      const s = buildSchedule(i);
+      expect(s.temperHours, at(preset, i)).toBeLessThanOrEqual(
+        SOURDOUGH_COLD_HANDLING.temperCapH
+      );
+    }
+  });
+
+  it("sits inside the sliders, and each preset is recognised as itself", () => {
+    for (const p of SOURDOUGH_SCHEDULE_PRESETS) {
+      expect(p.fermentationHours).toBeGreaterThanOrEqual(LIMITS.fermentationHours.min);
+      expect(p.fermentationHours).toBeLessThanOrEqual(LIMITS.fermentationHours.max);
+      expect(p.coldHours).toBeGreaterThanOrEqual(LIMITS.coldHours.min);
+      expect(p.coldHours).toBeLessThanOrEqual(LIMITS.coldHours.max);
+      const i = { ...defaultInputs, leavening: "sourdough" as const, ...schedulePresetPatch(p) };
+      expect(activeSchedulePreset(i)?.id).toBe(p.id);
+      // Moving any slider off the preset clears the highlight.
+      expect(activeSchedulePreset({ ...i, fermentationHours: i.fermentationHours + 0.25 })).toBeUndefined();
+    }
+  });
+
+  it("starts a switch to sourdough on the cold default, and only a switch", () => {
+    const fromYeast = leaveningPatch({ ...defaultInputs, leavening: "idy" }, "sourdough");
+    expect(fromYeast.coldFerment).toBe(true);
+    expect(activeSchedulePreset({ ...defaultInputs, ...fromYeast })?.id).toBe(
+      DEFAULT_SOURDOUGH_PRESET_ID
+    );
+    // Re-selecting sourdough, or leaving it, must not touch a schedule the
+    // baker has already set.
+    const mine = { ...defaultInputs, leavening: "sourdough" as const, coldFerment: false };
+    expect(leaveningPatch(mine, "sourdough")).toEqual({ leavening: "sourdough" });
+    expect(leaveningPatch(mine, "idy")).toEqual({ leavening: "idy" });
   });
 });

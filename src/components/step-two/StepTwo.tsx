@@ -5,12 +5,20 @@ import { SliderControl } from "@/components/slider-control/SliderControl";
 import { SwitchControl } from "@/components/switch-control/SwitchControl";
 import { InfoBadge } from "@/components/info-badge/InfoBadge";
 import { TopBadges } from "@/components/top-badges/TopBadges";
+import { pillClassName } from "@/components/preset-pills/PresetPills";
 import {
   BIGA_SCHEDULE,
   POOLISH_SCHEDULE,
   SOURDOUGH_COLD_HANDLING,
+  SOURDOUGH_SCHEDULE_PRESETS,
 } from "@/constants/dough";
-import { LIMITS, useRecipeInputs, useWizardStore } from "@/lib/store";
+import {
+  LIMITS,
+  activeSchedulePreset,
+  schedulePresetPatch,
+  useRecipeInputs,
+  useWizardStore,
+} from "@/lib/store";
 import {
   buildSchedule,
   calculateRecipe,
@@ -111,6 +119,46 @@ export function StepTwo() {
             on its own schedule. The slider below controls the final dough only, so
             it never shortens this window.
           </p>
+        </section>
+      )}
+
+      {/*
+        One tap per published sourdough method, so the baker picks a shape rather
+        than guessing three sliders. It only moves the sliders below; the room and
+        fridge temperatures stay the baker's own, and nothing here is locked.
+      */}
+      {inputs.leavening === "sourdough" && (
+        <section className="rounded-2xl border border-border bg-surface px-4 py-5">
+          <h2 className="text-sm font-medium text-text">Sourdough schedule</h2>
+          <p className="text-xs text-text-muted">
+            Start from a published method, then adjust anything below
+          </p>
+          <div
+            className="mt-3 flex flex-wrap gap-2"
+            role="group"
+            aria-label="Sourdough schedule presets"
+          >
+            {SOURDOUGH_SCHEDULE_PRESETS.map((preset) => {
+              const active = activeSchedulePreset(inputs)?.id === preset.id;
+              return (
+                <button
+                  key={preset.id}
+                  type="button"
+                  aria-pressed={active}
+                  onClick={() => updateInputs(schedulePresetPatch(preset))}
+                  className={pillClassName(active)}
+                >
+                  <span className="font-bold">{preset.label}</span>
+                  <span className={active ? "text-white/80" : ""}>
+                    {formatHours(preset.fermentationHours)}
+                    {preset.coldFerment
+                      ? ` + ${formatHours(preset.coldHours)} cold`
+                      : ""}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
         </section>
       )}
 

@@ -1015,3 +1015,107 @@ describe("commercial yeast with a cold ferment", () => {
     expect(calculateRecipe(levain).yeastPercent).toBe(levain.sourdoughPercent);
   });
 });
+
+describe("neapolitan: every method against published schedules", () => {
+  /*
+    The audit table. Each row is a complete published schedule, converted to this
+    app's inputs, with the dose the source actually used - IDY-equivalent (fresh
+    / 3, ADY / 1.25), as a percent of the flour the app doses against. Resolved
+    in simple mode, so salt is Neapolitan's 2.9%.
+
+    Observations, not targets. Where the model misses, the error is recorded
+    here rather than tuned away; see the notes on each group.
+  */
+  type Anchor = [
+    label: string,
+    leavening: LeaveningType,
+    schedule: Partial<WizardInputs>,
+    publishedLo: number,
+    publishedHi: number,
+  ];
+  const cold = (coldHours: number, coldTempC = 4) => ({
+    coldFerment: true,
+    coldHours,
+    coldTempC,
+  });
+  const run = (lv: LeaveningType, o: Partial<WizardInputs>) =>
+    calculateRecipe(
+      resolveFormula(
+        inputs({ style: "neapolitan", leavening: lv, coldFerment: false, ...o }),
+        false
+      )
+    );
+  /** 0 inside the published band, otherwise the signed miss past its nearer end. */
+  const miss = (dose: number, lo: number, hi: number) =>
+    dose < lo ? dose / lo - 1 : dose > hi ? dose / hi - 1 : 0;
+
+  // Inside the spread between sources, or within the ~2x the sources disagree
+  // by among themselves.
+  const WITHIN_SPREAD: Anchor[] = [
+    ["Vincenzo's Plate 2 h + 18 h fridge + 4 h", "idy", { fermentationHours: 6, ...cold(18) }, 0.1, 0.1],
+    ["Vito Iacopelli poolish, 3 h + 20 h fridge", "poolish", { fermentationHours: 3, ...cold(20) }, 0.56, 0.56],
+    ["Pala poolish, 3 h + 21 h fridge", "poolish", { fermentationHours: 3, ...cold(21) }, 0.57, 0.57],
+    ["Salt Butter Smoke poolish, 3 h + 48 h fridge", "poolish", { fermentationHours: 3, ...cold(48) }, 0.32, 0.32],
+    ["poolish, balls 4-6 h at room", "poolish", { fermentationHours: 6 }, 0.32, 0.57],
+    ["classic biga 18 h @ 18 C, 6.5 h at room", "biga", { fermentationHours: 6.5 }, 0.33, 0.33],
+    ["biga, 3 h + 24 h fridge", "biga", { fermentationHours: 3, ...cold(24) }, 0.33, 0.33],
+    ["Leopard Crust 9 h @ 18 C + 48 h @ 4 C", "sourdough", { fermentationHours: 9, roomTempC: 18, ...cold(48) }, 5, 10],
+    ["Leopard Crust 9 h @ 18 C + 72 h @ 4 C", "sourdough", { fermentationHours: 9, roomTempC: 18, ...cold(72) }, 5, 10],
+    ["classic sourdough 4 h + 24 h @ 4 C", "sourdough", { fermentationHours: 4, ...cold(24) }, 15, 15],
+    // The levain's known cold-ferment low bias (see STARTER_MODEL): held
+    // pending a bake at a measured fridge temperature, not fixed here.
+    ["Strgar 3 h + 15 h @ 5 C + 4 h", "sourdough", { fermentationHours: 7, ...cold(15, 5) }, 20, 20],
+    ["Leopard Crust 6 h @ 24 C + 48 h", "sourdough", { fermentationHours: 10, roomTempC: 24, ...cold(48) }, 10, 10],
+  ];
+
+  it("lands every cold, preferment and sourdough schedule inside the source spread", () => {
+    for (const [label, lv, o, lo, hi] of WITHIN_SPREAD) {
+      const err = miss(run(lv, o).yeastDosePercent, lo, hi);
+      expect(Math.abs(err), `${label}: ${(err * 100).toFixed(0)}%`).toBeLessThan(0.7);
+    }
+  });
+
+  it("raises no warning on a published schedule, bar one documented edge", () => {
+    // Leopard Crust's 72 h is the outer end of their own 48-72 h range, after a
+    // 9 h bulk, and reads 38 protease-hours against a 36 h caution tier. That
+    // tier is calibrated to practice (PROTEOLYTIC_TOLERANCE_H) and is not
+    // retuned for one row; "handles softer than usual" is a fair description.
+    const EDGE = "Leopard Crust 9 h @ 18 C + 72 h @ 4 C";
+    for (const [label, lv, o] of WITHIN_SPREAD) {
+      const warned = run(lv, o).warnings.filter((w) => w.tone === "warn").map((w) => w.id);
+      expect(warned, label).toEqual(label === EDGE ? ["overferment-caution"] : []);
+      // The final-dough check exists to bracket exactly these schedules.
+      expect(ids(run(lv, o)).filter((id) => id.startsWith("preferment-main")), label).toEqual([]);
+    }
+  });
+
+  it("records where the room-temperature yeast dose sits between two camps", () => {
+    // Without a fridge stage, the published Neapolitan doses split into two
+    // camps 5-8x apart, and the model sits with the faster one:
+    //
+    //   traditional  AVPN 2 h + 6 h @ 25 C         0.03-0.06%  model 0.37%  (+561%)
+    //                Italian Pizza Secrets 8 h @ 20 0.06%       model 0.55%  (+820%)
+    //                PizzaPlan 8-12 h @ 20 C        0.08-0.13%  model 0.42%  (+218%)
+    //                PizzaBlab 4 h @ 20 C           0.48%       model 1.27%  (+164%)
+    //   home         The Pizza Craft 6-8 h          0.30-0.50%  model 0.60%   (+20%)
+    //                The Pizza Craft 24 h @ 22 C    0.10%       model 0.13%   (+26%)
+    //
+    // An open finding, not fixed here: YEAST_MODEL also sets the reference for
+    // the cold-dose ceiling, so moving it moves every commercial schedule, and it
+    // needs its own fit. Pinned so a recalibration updates this table on purpose.
+    const HOME: Anchor[] = [
+      ["The Pizza Craft same-day 7 h", "idy", { fermentationHours: 7 }, 0.3, 0.5],
+      ["The Pizza Craft 24 h @ 22 C", "idy", { fermentationHours: 24, roomTempC: 22 }, 0.1, 0.1],
+    ];
+    const TRADITIONAL: Anchor[] = [
+      ["AVPN 2 h + 6 h @ 25 C", "idy", { fermentationHours: 8, roomTempC: 25 }, 0.033, 0.056],
+      ["PizzaPlan 8-12 h @ 20 C", "idy", { fermentationHours: 10, roomTempC: 20 }, 0.077, 0.133],
+    ];
+    for (const [label, lv, o, lo, hi] of HOME) {
+      expect(Math.abs(miss(run(lv, o).yeastDosePercent, lo, hi)), label).toBeLessThan(0.3);
+    }
+    for (const [label, lv, o, , hi] of TRADITIONAL) {
+      expect(run(lv, o).yeastDosePercent, label).toBeGreaterThan(hi * 2);
+    }
+  });
+});

@@ -19,6 +19,18 @@ interface PresetPillsProps {
 
 const EPSILON = 1e-6;
 
+/** A preset pill's look, shared with any row of one-tap choices. */
+export function pillClassName(active: boolean): string {
+  return cn(
+    "flex min-h-[36px] items-center gap-1.5 rounded-xl border px-3 text-xs font-medium",
+    "transition-[background-color,border-color,transform] duration-150 active:scale-[0.96]",
+    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-page",
+    active
+      ? "border-accent-700 bg-accent-700 text-white"
+      : "border-border bg-surface-sunken text-text-muted hover:border-border-strong"
+  );
+}
+
 /**
  * One-tap values under a slider. A slider says what is possible; these say what
  * is worth choosing, which is the part a first-time baker has no basis to guess.
@@ -48,14 +60,7 @@ export function PresetPills({
             type="button"
             aria-pressed={active}
             onClick={() => onChange(preset.value)}
-            className={cn(
-              "flex min-h-[36px] items-center gap-1.5 rounded-xl border px-3 text-xs font-medium",
-              "transition-[background-color,border-color,transform] duration-150 active:scale-[0.96]",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-focus-ring focus-visible:ring-offset-2 focus-visible:ring-offset-page",
-              active
-                ? "border-accent-700 bg-accent-700 text-white"
-                : "border-border bg-surface-sunken text-text-muted hover:border-border-strong"
-            )}
+            className={pillClassName(active)}
           >
             <span className="font-bold tabular-nums">
               {preset.value.toFixed(decimals)}

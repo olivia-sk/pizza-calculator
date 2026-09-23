@@ -3,9 +3,14 @@
 import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { STYLES } from "@/constants/dough";
+import {
+  DEFAULT_SOURDOUGH_PRESET_ID,
+  SOURDOUGH_SCHEDULE_PRESETS,
+  STYLES,
+  SchedulePreset,
+} from "@/constants/dough";
 import { clamp, doughballWeightFromSize, resolveFormula } from "./calculations";
-import { SettingsState, WizardInputs } from "@/types";
+import { LeaveningType, SettingsState, WizardInputs } from "@/types";
 
 const defaultPizzaSizeIn = 12;
 
@@ -177,6 +182,48 @@ export function useRecipeInputs(): WizardInputs {
   const inputs = useWizardStore((s) => s.inputs);
   const advanced = useWizardStore((s) => s.settings.advanced);
   return useMemo(() => resolveFormula(inputs, advanced), [inputs, advanced]);
+}
+
+/** The slider values a schedule preset sets, and nothing else. */
+export function schedulePresetPatch(preset: SchedulePreset): Partial<WizardInputs> {
+  return {
+    fermentationHours: preset.fermentationHours,
+    coldFerment: preset.coldFerment,
+    coldHours: preset.coldHours,
+  };
+}
+
+/**
+ * The preset the current schedule matches, if any. The fridge duration only
+ * counts when there is a fridge stage, so a same-day schedule stays matched
+ * whatever the hidden cold slider happens to hold.
+ */
+export function activeSchedulePreset(inputs: WizardInputs): SchedulePreset | undefined {
+  return SOURDOUGH_SCHEDULE_PRESETS.find(
+    (p) =>
+      p.fermentationHours === inputs.fermentationHours &&
+      p.coldFerment === inputs.coldFerment &&
+      (!p.coldFerment || p.coldHours === inputs.coldHours)
+  );
+}
+
+/**
+ * What choosing a leavening method changes. Switching *into* sourdough starts
+ * the baker on the default preset, since almost every published sourdough pizza
+ * runs a cold stage; after that the schedule is theirs. Lives here rather than
+ * in `sanitize`, so a shared link or a reload keeps exactly the schedule it had.
+ */
+export function leaveningPatch(
+  current: WizardInputs,
+  next: LeaveningType
+): Partial<WizardInputs> {
+  if (next !== "sourdough" || current.leavening === "sourdough") {
+    return { leavening: next };
+  }
+  const preset = SOURDOUGH_SCHEDULE_PRESETS.find(
+    (p) => p.id === DEFAULT_SOURDOUGH_PRESET_ID
+  )!;
+  return { leavening: next, ...schedulePresetPatch(preset) };
 }
 
 export { defaultInputs };

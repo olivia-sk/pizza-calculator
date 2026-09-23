@@ -299,6 +299,40 @@ export const SOURDOUGH_COLD_HANDLING = {
   temperRangeH: [3, 6],
 } as const;
 
+/** A one-tap sourdough schedule: the shape of a published method. */
+export interface SchedulePreset {
+  id: string;
+  label: string;
+  fermentationHours: number;
+  coldFerment: boolean;
+  coldHours: number;
+}
+
+/**
+ * Starting points for a sourdough schedule, one per published school, so a
+ * baker picks a method rather than guessing three sliders. They set the
+ * schedule's shape only. Room and fridge temperature describe the baker's own
+ * kitchen and are never overwritten, and the starter dose still comes from
+ * STARTER_MODEL, so everything stays editable afterwards.
+ *
+ *   same-day  8 h at room temperature, no fridge     (the 8 h @ 21 C anchor)
+ *   strgar    7 h ambient (~3 h bulk + ~4 h temper) + 16 h fridge: Rene
+ *             Strgar's 24-30 h method, inside SOURDOUGH_COLD_HANDLING's range
+ *   two-day   10 h ambient (bulk to completion, then a 6 h temper) + 48 h
+ *             fridge: Leopard Crust's 24 C variant. Their 18 C variant runs
+ *             16 h ambient, but at 21 C that much counter time plus 48 h in a
+ *             6 C fridge crosses the protease caution tier, so the warm-kitchen
+ *             shape is the one offered.
+ */
+export const SOURDOUGH_SCHEDULE_PRESETS: SchedulePreset[] = [
+  { id: "same-day", label: "Same day", fermentationHours: 8, coldFerment: false, coldHours: 24 },
+  { id: "strgar", label: "Overnight cold", fermentationHours: 7, coldFerment: true, coldHours: 16 },
+  { id: "two-day", label: "Two-day cold", fermentationHours: 10, coldFerment: true, coldHours: 48 },
+];
+
+/** The preset applied when a baker switches to sourdough. */
+export const DEFAULT_SOURDOUGH_PRESET_ID = "strgar";
+
 /** A doughball needs roughly this long out of the fridge to reach room temp. */
 export const MIN_TEMPER_H = 1.5;
 
@@ -398,6 +432,28 @@ export const POOLISH_SCHEDULE = {
   coldRangeH: [16, 24],
   coldTempC: 4,
 } as const;
+
+/**
+ * How much yeast activity the *final* dough of a poolish or biga should get,
+ * in room-temperature-equivalent hours on the commercial yeast clock
+ * (`effectiveFermentationHours`). A preferment dough adds no yeast of its own
+ * on mixing day: the ripe preferment carries all of it, so its dose is fixed
+ * and the main-dough schedule is the only thing that decides whether the balls
+ * come out under-proofed, ready, or blown. Nothing else checks that stage.
+ *
+ * The band sits outside every published schedule found (ambient at 21 C, fridge
+ * at 4 C unless noted):
+ *
+ *   poolish, 1 h bulk + 4-6 h balls at room      ->  5-7 h
+ *   Vito Iacopelli, ~3 h ambient + 16-24 h fridge ->  ~8 h
+ *   Pala, ~3 h ambient + 18-24 h fridge           ->  ~8 h
+ *   Salt Butter Smoke, ~3 h + 36-48 h fridge      -> 12-15 h  (17 h at 6 C)
+ *   biga, 1-2 h bulk + 4-6 h appretto at room     ->  5-8 h
+ *
+ * So `short` is under the shortest room schedule and `long` is over the
+ * longest cold one even in a 6 C fridge. Both fire a note, never a clamp.
+ */
+export const PREFERMENT_MAIN_DOUGH_EQ_H = { short: 4, long: 18 } as const;
 
 /** Share of total flour that goes into the poolish (Vito Iacopelli style). */
 export const POOLISH_FLOUR_FRACTION = 0.3;
