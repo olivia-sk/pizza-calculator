@@ -31,6 +31,7 @@ import {
   formatHours,
   formatMass,
   formatTemp,
+  yeastHoursAt21,
 } from "@/lib/calculations";
 
 export function StepTwo() {
@@ -298,9 +299,14 @@ export function StepTwo() {
           Dose preview
         </h2>
         <dl className="mt-3 space-y-2 text-sm">
+          {/*
+            Read in hours at 21 C, not at the room: hours folded to the room move
+            with the slider, so a warmer kitchen used to show *less* activity.
+            Now both rows share the unit the gluten clock already used.
+          */}
           <ScheduleRow
-            label={`Yeast activity at ${formatTemp(inputs.roomTempC, tempUnit)}`}
-            value={formatHours(schedule.effectiveHours)}
+            label={`Yeast activity (${formatTemp(21, tempUnit)} hours)`}
+            value={formatHours(yeastHoursAt21(inputs))}
           />
           {/*
             The second clock, shown beside the first because the gap between them

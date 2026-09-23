@@ -305,19 +305,21 @@ export function starterEquivalentHours(inputs: WizardInputs): number {
 
 /**
  * The least starter a short-bulk cold ferment wants, before salt; 0 without a
- * fridge stage. Flat in fridge time, lowered only by a warm fridge, and faded
- * out as the ambient budget grows into a long warm bulk. See
+ * fridge stage. Flat in fridge time, lowered only by a warm fridge or a warm
+ * kitchen, and faded out as the ambient budget grows into a long warm bulk. See
  * SHORT_BULK_STARTER_FLOOR for the recipes and why.
  */
 export function shortBulkStarterFloor(inputs: WizardInputs): number {
   if (!inputs.coldFerment) return 0;
-  const { percent, refColdTempC } = SHORT_BULK_STARTER_FLOOR;
+  const { percent, refColdTempC, refRoomTempC } = SHORT_BULK_STARTER_FLOOR;
   const T = Number.isFinite(inputs.coldTempC) ? inputs.coldTempC : refColdTempC;
   const fridge = Math.min(1, Math.exp(COLD_DECAY_K.sourdough * (refColdTempC - T)));
+  const R = Number.isFinite(inputs.roomTempC) ? inputs.roomTempC : refRoomTempC;
+  const room = Math.min(1, Math.exp(STARTER_MODEL.k * (refRoomTempC - R)));
   const from = SOURDOUGH_COLD_HANDLING.ambientRangeH[1];
   const to = SOURDOUGH_COLD_HANDLING.maxAmbientH;
   const longBulk = clamp((inputs.fermentationHours - from) / (to - from), 0, 1);
-  return percent * fridge * (1 - longBulk);
+  return percent * fridge * room * (1 - longBulk);
 }
 
 /**
@@ -328,6 +330,20 @@ export function shortBulkStarterFloor(inputs: WizardInputs): number {
  * preferment's dose is fixed by its own window.
  */
 export function proteolyticHours(inputs: WizardInputs): number {
+  const { preferment, counter, fridge } = proteolyticParts(inputs);
+  return preferment + counter + fridge;
+}
+
+/**
+ * The protease clock stage by stage, so the guardrail can name the stage doing
+ * the damage. In a warm kitchen a counter hour costs several fridge hours, and
+ * the counter can outweigh a two-day fridge stage on its own.
+ */
+export function proteolyticParts(inputs: WizardInputs): {
+  preferment: number;
+  counter: number;
+  fridge: number;
+} {
   const ref = POOLISH_MODEL.refTempC;
   // Only the preferment's own share of the flour spends the preferment's window
   // fermenting; the rest is weighed out fresh on mixing day. Counting that window
@@ -339,11 +355,36 @@ export function proteolyticHours(inputs: WizardInputs): number {
       : inputs.leavening === "biga"
       ? BIGA_FLOUR_FRACTION
       : 0;
-  const preferment =
-    prefermentFlour *
-    equivalentHours(prefermentStages(inputs), ref, PROTEOLYSIS_K);
-  return (
-    preferment + equivalentHours(mainDoughStages(inputs), ref, PROTEOLYSIS_K)
+  const [ambient, ...cold] = mainDoughStages(inputs);
+  return {
+    preferment:
+      prefermentFlour *
+      equivalentHours(prefermentStages(inputs), ref, PROTEOLYSIS_K),
+    counter: equivalentHours([ambient], ref, PROTEOLYSIS_K),
+    fridge: equivalentHours(cold, ref, PROTEOLYSIS_K),
+  };
+}
+
+/**
+ * The main dough's yeast activity in hours at 21 C, as a reading rather than a
+ * dosing input: the unit PREFERMENT_MAIN_DOUGH_EQ_H is written in, the unit the
+ * dose preview shows, and the unit the gluten-degrading clock already uses.
+ *
+ * `effectiveHours` is folded to the room instead, which is right for dosing a
+ * straight dough at that room, but as a yardstick it drifts. A warmer kitchen
+ * shrank the fridge's share, so a poolish at 1 h + 20 h in a 35 C kitchen read
+ * as too short, a 6.5 h biga at 35 C - about 20 h at 21 C - read as an ordinary
+ * 6.5 h, and the preview showed a poolish overnight falling from 11 h to 5 h as
+ * the kitchen warmed.
+ *
+ * A sourdough reads the clock its starter is solved on.
+ */
+export function yeastHoursAt21(inputs: WizardInputs): number {
+  if (inputs.leavening === "sourdough") return starterEquivalentHours(inputs);
+  return equivalentHours(
+    mainDoughStages(inputs),
+    POOLISH_MODEL.refTempC,
+    COLD_DECAY_K.commercial
   );
 }
 
@@ -743,10 +784,18 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
   // is fixed by the preferment's own window and cannot be cut to compensate.
   const tProt = schedule.proteolyticHours;
   // The way out depends on which stage is actually long. Telling someone with no
-  // fridge stage to "shorten the fridge stage" is advice they cannot act on.
-  const shorten = inputs.coldFerment
-    ? "shorten the fridge stage"
-    : "shorten the room ferment";
+  // fridge stage to "shorten the fridge stage" is advice they cannot act on, and
+  // telling a 33 C kitchen to shorten the fridge misses the counter, which there
+  // costs about four fridge hours per hour.
+  // With a fridge stage both are levers, so the fridge advice names the counter
+  // too; the larger contributor always comes first.
+  const parts = proteolyticParts(inputs);
+  const shorten =
+    inputs.coldFerment && parts.fridge > parts.counter
+      ? "shorten the fridge stage or the room ferment"
+      : inputs.coldFerment
+      ? "shorten the room ferment, keep the dough somewhere cooler"
+      : "shorten the room ferment";
   if (tProt > PROTEOLYTIC_TOLERANCE_H.severe) {
     warnings.add(
       "overferment-severe",
@@ -754,7 +803,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       `This schedule works out to ${Math.round(tProt)} hours of gluten-degrading ` +
         "activity, well past what W280-320 flour tolerates. Expect a slack, sticky " +
         "dough that tears instead of stretching. Cutting the yeast will not save it: " +
-        `${shorten} or move to a W330+ flour.`
+        `${shorten}, or move to a W330+ flour.`
     );
   } else if (tProt > PROTEOLYTIC_TOLERANCE_H.caution) {
     warnings.add(
@@ -762,7 +811,7 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
       "warn",
       `This schedule works out to ${Math.round(tProt)} hours of gluten-degrading ` +
         "activity, near the limit for W280-320 flour. The dough will handle softer " +
-        `than usual; ${shorten} or use a stronger flour for margin.`
+        `than usual; ${shorten}, or use a stronger flour for margin.`
     );
   }
 
@@ -771,22 +820,23 @@ export function calculateRecipe(inputs: WizardInputs): RecipeResult {
   // PREFERMENT_MAIN_DOUGH_EQ_H for the published schedules it brackets.
   if (isPoolish || isBiga) {
     const name = isPoolish ? "poolish" : "biga";
-    if (effHours < PREFERMENT_MAIN_DOUGH_EQ_H.short) {
+    const mainH = yeastHoursAt21(inputs);
+    if (mainH < PREFERMENT_MAIN_DOUGH_EQ_H.short) {
       warnings.add(
         "preferment-main-short",
         "note",
-        `The final dough gets about ${formatHours(effHours)} of yeast activity. The ` +
+        `The final dough gets about ${formatHours(mainH)} of yeast activity. The ` +
           `${name} carries all the yeast this dough gets, and published schedules give ` +
           "the balls 4-6 hours at room temperature after mixing. " +
           (inputs.coldFerment
             ? "Give it longer on the counter or in the fridge."
             : "Give the balls longer on the counter.")
       );
-    } else if (effHours > PREFERMENT_MAIN_DOUGH_EQ_H.long) {
+    } else if (mainH > PREFERMENT_MAIN_DOUGH_EQ_H.long) {
       warnings.add(
         "preferment-main-long",
         "note",
-        `The final dough gets about ${formatHours(effHours)} of yeast activity on top ` +
+        `The final dough gets about ${formatHours(mainH)} of yeast activity on top ` +
           `of a ripe ${name}, longer than published schedules run. Expect the balls to ` +
           "over-proof: " +
           (inputs.coldFerment

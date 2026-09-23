@@ -191,6 +191,24 @@ export const COLD_DECAY_K = { commercial: 0.08, sourdough: 0.12 } as const;
  *
  * Sourdough does not use this. Its own dose is set by STARTER_MODEL, and the
  * levain arm of COLD_DECAY_K is a separate, still-open question.
+ *
+ * The reference dose is taken at the baker's room temperature, so the whole
+ * ceiling scales with the kitchen, although only the ambient hours are spent
+ * there. That looks like it over-corrects, and a 2026-09-23 audit flagged it. It
+ * was checked against practice and kept. Neapolitan pizzaioli on long cold
+ * ferments cut the yeast by season (pizza.it forum, "Lievito in inverno"):
+ *
+ *   Folino   72-96 h fridge   1.5 / 1.0 / 0.5 g fresh per kg   winter / summer / >30 C
+ *   Alessio  48 h+ fridge     3 / 2 g                          winter / summer
+ *
+ * With kitchens taken as 18 / 26 / 31 C (the posts name seasons, not
+ * temperatures), this ceiling misses by 24% on average. A ceiling referenced at
+ * 21 C, which is flat in the kitchen, misses by 39%, and by +115% above 30 C.
+ *
+ * Lehmann's own practice is different, not contrary: he holds the dose and
+ * controls the finished dough temperature with chilled water. This app sets no
+ * dough-temperature target, so a baker in a hot kitchen is in the pizzaioli's
+ * position, not his.
  */
 export const COMMERCIAL_COLD_DOSE = {
   referenceRoomH: 12,
@@ -484,9 +502,11 @@ export const POOLISH_SCHEDULE = {
 
 /**
  * How much yeast activity the *final* dough of a poolish or biga should get,
- * in room-temperature-equivalent hours on the commercial yeast clock
- * (`effectiveFermentationHours`). A preferment dough adds no yeast of its own
- * on mixing day: the ripe preferment carries all of it, so its dose is fixed
+ * in equivalent hours at 21 C on the commercial yeast clock
+ * (`yeastHoursAt21`). Hours folded to the baker's own room would drift with
+ * the kitchen, and the published schedules below are all at 21 C. A preferment
+ * dough adds no yeast of its own on mixing day: the ripe preferment carries all
+ * of it, so its dose is fixed
  * and the main-dough schedule is the only thing that decides whether the balls
  * come out under-proofed, ready, or blown. Nothing else checks that stage.
  *
@@ -508,10 +528,12 @@ export const PREFERMENT_MAIN_DOUGH_EQ_H = { short: 4, long: 18 } as const;
  * The least starter a short-bulk cold ferment wants, as a percentage of total
  * flour before the salt correction:
  *
- *   floor = percent * min(1, exp(k * (refColdTempC - Tc))) * taper(ambient)
+ *   floor = percent * min(1, exp(k * (refColdTempC - Tc)))
+ *                   * min(1, exp(kRoom * (refRoomTempC - Troom))) * taper(ambient)
  *
- * with k the levain's COLD_DECAY_K. The suggestion is the greater of this and
- * STARTER_MODEL's curve, so it is a floor, not a replacement.
+ * with k the levain's COLD_DECAY_K and kRoom STARTER_MODEL.k. The suggestion is
+ * the greater of this and STARTER_MODEL's curve, so it is a floor, not a
+ * replacement.
  *
  * What sets a sourdough pizza's starter is how long the dough ferments *warm*,
  * not how long it sits in the fridge. At 3-5 C a levain nearly stops (33 h at
@@ -544,10 +566,19 @@ export const PREFERMENT_MAIN_DOUGH_EQ_H = { short: 4, long: 18 } as const;
  * real fermenting; a colder one than 5 C barely differs from 5 C, so it does not
  * raise it. Unverified against it: STARTER_MODEL's "classic 4 h + 24 h -> 15%"
  * row, which has no traceable source and sits below every recipe above.
+ *
+ * A kitchen warmer than refRoomTempC lowers it the same way, at STARTER_MODEL's
+ * own k. The floor is warm-time dosing, and 20% is what Strgar uses for a 3 h
+ * bulk at 24 C. Without this the floor held 18-21% from a 15 C kitchen to a 35 C
+ * one, so a 33 C counter got a 24 C recipe's starter. That is roughly twice the
+ * warm activity, and the curve alone asked for under 4%. Only warmer lowers it,
+ * for the same reason as the fridge: every anchor sits at or below 24 C, and
+ * none of them move.
  */
 export const SHORT_BULK_STARTER_FLOOR = {
   percent: 20,
   refColdTempC: 5,
+  refRoomTempC: 24,
 } as const;
 
 /** Share of total flour that goes into the poolish (Vito Iacopelli style). */

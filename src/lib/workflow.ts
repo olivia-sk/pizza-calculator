@@ -1,4 +1,5 @@
 import {
+  BIGA_MODEL,
   BIGA_SCHEDULE,
   POOLISH_SCHEDULE,
   SOURDOUGH_METHOD,
@@ -7,6 +8,7 @@ import {
 } from "@/constants/dough";
 import {
   buildSchedule,
+  equivalentHours,
   formatHours,
   formatMass,
   formatTemp,
@@ -156,18 +158,42 @@ function bigaBuild(c: Ctx): WorkflowStep | null {
   const b = c.recipe.biga;
   if (!b) return null;
   // A biga carries no honey, so the sweetener clause is dropped entirely.
+  const [lo, hi] = BIGA_SCHEDULE.tempRangeC;
+  const warm = c.inputs.roomTempC > hi;
   return {
     title: `Build the Biga (${c.hrs(c.schedule.prefermentLeadHours)} Ahead)`,
     detail: `${yeastPrep(c, c.mass(b.water), null)}, then work in ${c.mass(
       b.flour
     )} flour until it comes together as a stiff, shaggy mass; do not knead smooth. Cover and ferment at ${tempRange(
-      BIGA_SCHEDULE.tempRangeC[0],
-      BIGA_SCHEDULE.tempRangeC[1],
+      lo,
+      hi,
       c.tempUnit
-    )} \u2014 or at room temperature if your kitchen runs cool \u2014 for ${hourRange(
+    )}${
+      warm ? "" : " \u2014 or at room temperature if your kitchen runs cool \u2014"
+    } for ${hourRange(
       BIGA_SCHEDULE.rangeH
-    )}, until aromatic, aerated, and just beginning to collapse at the center.`,
+    )}, until aromatic, aerated, and just beginning to collapse at the center.${
+      warm ? warmBigaNote(c) : ""
+    }`,
   };
+}
+
+/**
+ * The dose is solved for BIGA_SCHEDULE's cellar hold, so a warm kitchen needs
+ * to hear where to find one, and what happens on the counter instead: the same
+ * ripening in far fewer hours, which is a biga to watch, not to time.
+ */
+function warmBigaNote(c: Ctx): string {
+  const counterH = equivalentHours(
+    [{ hours: BIGA_SCHEDULE.hours, tempC: BIGA_SCHEDULE.tempC }],
+    c.inputs.roomTempC,
+    BIGA_MODEL.k
+  );
+  // The kitchen's own temperature is deliberately not printed: the step must
+  // never read as an instruction to ferment at it.
+  return ` Your counter is too warm for that: a wine fridge or a cool cellar will hold it. Left on the counter it ripens in about ${c.hrs(
+    counterH
+  )}, so watch it and use it as soon as it starts to collapse, whatever the clock says.`;
 }
 
 function starterBuild(c: Ctx): WorkflowStep | null {

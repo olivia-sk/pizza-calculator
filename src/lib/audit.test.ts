@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildSchedule,
   calculateRecipe,
+  equivalentHours,
   formatMass,
   resolveFormula,
+  yeastHoursAt21,
 } from "./calculations";
 import { buildWorkflow } from "./workflow";
 import {
@@ -24,6 +26,7 @@ import {
   WizardInputs,
 } from "@/types";
 import {
+  PROTEOLYSIS_K,
   RECOMMENDED_SCHEDULE,
   SCHEDULE_PRESETS,
   SOURDOUGH_COLD_HANDLING,
@@ -441,8 +444,168 @@ describe("input space audit", () => {
   });
 });
 
+describe("warm and cool kitchens", () => {
+  /*
+    Every flaw in this block was invisible at 21 C, which is where every anchor
+    and most of the sweep above sits. They were found by running the presets in a
+    33 C kitchen: a starter that did not move at all with the room, final-dough
+    notes measured in a unit that drifts with the room, and advice that blamed
+    the fridge for damage the counter was doing.
+  */
+  const starter = (i: WizardInputs) => resolveFormula(i, false).sourdoughPercent;
+
+  it("gives a cold-ferment sourdough less starter in a warm kitchen", () => {
+    // The existing monotonicity check asks only that the starter never *rises*
+    // as the room warms, which a dose flat from 15 C to 35 C passes. The
+    // short-bulk floor was exactly that: 18-21% whatever the kitchen, so a 33 C
+    // counter got the starter its 24 C source recipe used.
+    for (const fermentationHours of [1, 3, 7, 9, 12]) {
+      for (const coldHours of [16, 48, LIMITS.coldHours.max]) {
+        for (const coldTempC of [LIMITS.coldTempC.min, 4, 6, LIMITS.coldTempC.max]) {
+          const i = {
+            ...defaultInputs,
+            leavening: "sourdough" as const,
+            coldFerment: true,
+            fermentationHours,
+            coldHours,
+            coldTempC,
+          };
+          const label = `${fermentationHours}h + ${coldHours}h @${coldTempC}C`;
+          expect(starter({ ...i, roomTempC: 33 }), label).toBeLessThan(
+            starter({ ...i, roomTempC: 24 })
+          );
+        }
+      }
+    }
+  });
+
+  it("never reads a warmer kitchen as less final-dough activity", () => {
+    // PREFERMENT_MAIN_DOUGH_EQ_H is written in hours at 21 C. Compared against
+    // hours folded to the room instead, a warm kitchen shrank the fridge's share
+    // and a poolish at 1 h + 20 h in a 35 C kitchen was told it was too short.
+    for (const leavening of ["poolish", "biga"] as const) {
+      for (const fermentationHours of [1, 3, 6, 12, 25]) {
+        for (const coldFerment of [false, true]) {
+          for (const coldHours of coldFerment ? [1, 20, 48, 96] : [24]) {
+            let wasShort = true;
+            let wasLong = false;
+            for (let t = LIMITS.roomTempC.min; t <= LIMITS.roomTempC.max; t += 1) {
+              const ids = calculateRecipe({
+                ...defaultInputs,
+                leavening,
+                fermentationHours,
+                coldFerment,
+                coldHours,
+                roomTempC: t,
+              }).warnings.map((w) => w.id);
+              const label = `${leavening} ${fermentationHours}h${coldFerment ? ` + ${coldHours}h` : ""} @${t}C`;
+              const isShort = ids.includes("preferment-main-short");
+              const isLong = ids.includes("preferment-main-long");
+              expect(isShort && !wasShort, `${label} :: short appeared as it warmed`).toBe(false);
+              expect(!isLong && wasLong, `${label} :: long cleared as it warmed`).toBe(false);
+              wasShort = isShort;
+              wasLong = isLong;
+            }
+          }
+        }
+      }
+    }
+    // The case the unit hid in the other direction: 6.5 h at 35 C is about 20 h
+    // at 21 C, past every published final-dough schedule.
+    const hotBiga = calculateRecipe({
+      ...defaultInputs,
+      leavening: "biga",
+      fermentationHours: 6.5,
+      coldFerment: false,
+      roomTempC: 35,
+    });
+    expect(hotBiga.warnings.map((w) => w.id)).toContain("preferment-main-long");
+  });
+
+  it("tells a warm kitchen how to hold a biga", () => {
+    // The biga's dose is solved for 17 h at 17 C. The copy offered only "or at
+    // room temperature if your kitchen runs cool", so a 30 C kitchen had no word
+    // on where to hold it or how much faster it would ripen on the counter.
+    const WARM = /wine fridge/i;
+    for (const roomTempC of [LIMITS.roomTempC.min, 18, 19, 24, 30, LIMITS.roomTempC.max]) {
+      const i = { ...defaultInputs, leavening: "biga" as const, roomTempC };
+      const r = calculateRecipe(i);
+      for (const tempUnit of ["C", "F"] as TempUnit[]) {
+        const text = buildWorkflow(i, r, { massUnit: "g", tempUnit })[0].detail;
+        const label = `biga @${roomTempC}C ${tempUnit}`;
+        if (roomTempC > 18) expect(text, label).toMatch(WARM);
+        else expect(text, label).not.toMatch(WARM);
+      }
+    }
+  });
+
+  it("never shows less yeast activity for a warmer kitchen", () => {
+    // The preview used to read the schedule folded to the kitchen itself, a
+    // unit that moves with the slider: a poolish overnight showed 11 h at 15 C
+    // and 5 h at 35 C. Shown in 21 C hours, warmer can only mean more.
+    for (const leavening of LEAVENINGS) {
+      for (const fermentationHours of [1, 3, 10]) {
+        for (const coldFerment of [false, true]) {
+          for (const coldHours of coldFerment ? [16, 48] : [24]) {
+            let previous = -Infinity;
+            for (let t = LIMITS.roomTempC.min; t <= LIMITS.roomTempC.max; t += 1) {
+              const v = yeastHoursAt21({
+                ...defaultInputs,
+                leavening,
+                fermentationHours,
+                coldFerment,
+                coldHours,
+                roomTempC: t,
+              });
+              const label = `${leavening} ${fermentationHours}h${coldFerment ? ` + ${coldHours}h` : ""} @${t}C`;
+              expect(v, label).toBeGreaterThanOrEqual(previous - 1e-9);
+              previous = v;
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("points the overfermentation advice at the stage doing the damage", () => {
+    // The screenshot that started this: 10 h at 33 C plus 48 h at 4 C. The
+    // counter supplied 18 of the 39 protease hours, hour for hour 4x the fridge,
+    // and the advice named only the fridge.
+    const ROOM = /room ferment/i;
+    const FRIDGE = /fridge stage/i;
+    let counterLed = 0;
+    for (const i of grid()) {
+      if (!i.coldFerment) continue;
+      const w = calculateRecipe(i).warnings.find((x) => x.id.startsWith("overferment-"));
+      if (!w) continue;
+      const counter = equivalentHours(
+        [{ hours: i.fermentationHours, tempC: i.roomTempC }],
+        21,
+        PROTEOLYSIS_K
+      );
+      const fridge = equivalentHours([{ hours: i.coldHours, tempC: i.coldTempC }], 21, PROTEOLYSIS_K);
+      const label = `${where(i)} :: counter ${counter.toFixed(1)}h, fridge ${fridge.toFixed(1)}h`;
+      // The larger contributor is named, and named first.
+      const [lead, other] = counter >= fridge ? [ROOM, FRIDGE] : [FRIDGE, ROOM];
+      if (counter >= fridge) counterLed += 1;
+      const leadAt = w.text.search(lead);
+      const otherAt = w.text.search(other);
+      expect(leadAt, label).toBeGreaterThanOrEqual(0);
+      if (otherAt >= 0) expect(leadAt, label).toBeLessThan(otherAt);
+    }
+    // Guard against the branch above going quietly untested.
+    expect(counterLed).toBeGreaterThan(0);
+  });
+});
+
 describe("schedule presets", () => {
-  /** Every preset of every method, in every kitchen and fridge it is likely to meet. */
+  /**
+   * Every preset of every method, in every kitchen and fridge it is likely to
+   * meet. The room axis stops at 24 C on purpose: the sourdough two-day preset's
+   * 10 h on the counter crosses the protease caution tier from about 28 C (with
+   * a 7 C fridge). The guardrail is right to fire there, and it names whichever
+   * stage contributes most. Presets do not adapt to the kitchen.
+   */
   function* presetGrid() {
     for (const style of STYLE_IDS) {
       for (const leavening of LEAVENINGS) {
